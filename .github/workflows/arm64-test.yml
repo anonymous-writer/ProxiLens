@@ -1,0 +1,40 @@
+
+name: AMD64 Test Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build-amd64:
+    name: Build Linux AMD64
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27'
+          cache: true
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build AMD64 scanner
+        env:
+          GOOS: linux
+          GOARCH: amd64
+          CGO_ENABLED: 0
+        run: |
+          go build -o proxilens-scan-linux-amd64 ./cmd/proxilens-scan
+
+      - name: Upload AMD64 test program
+        uses: actions/upload-artifact@v4
+        with:
+          name: ProxiLens-Linux-AMD64
+          path: proxilens-scan-linux-amd64
