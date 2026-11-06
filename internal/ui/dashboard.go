@@ -203,13 +203,15 @@ func panel(obj fyne.CanvasObject) fyne.CanvasObject {
 }
 
 func color(hex string) stdcolor.Color {
-	c := theme.ForegroundColor()
-	if len(hex) == 7 {
+	// Do not call theme.ForegroundColor() here: it consults the active
+	// application theme, which calls this helper again and causes recursion.
+	if len(hex) == 7 && hex[0] == '#' {
 		var r, g, b uint8
-		fmt.Sscanf(hex, "#%02x%02x%02x", &r, &g, &b)
-		return stdcolor.NRGBA{R: r, G: g, B: b, A: 255}
+		if _, err := fmt.Sscanf(hex, "#%02x%02x%02x", &r, &g, &b); err == nil {
+			return stdcolor.NRGBA{R: r, G: g, B: b, A: 255}
+		}
 	}
-	return c
+	return stdcolor.NRGBA{R: 237, G: 243, B: 255, A: 255}
 }
 
 type leaseLensTheme struct{ fyne.Theme }
