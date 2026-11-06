@@ -22,6 +22,16 @@ import (
 	"github.com/local/proxilens/internal/bluez"
 )
 
+type BLEEvent struct {
+	Timestamp             time.Time         `json:"timestamp"`
+	Address               string            `json:"address"`
+	Name                  string            `json:"name,omitempty"`
+	RSSI                  int16             `json:"rssi"`
+	AppleManufacturerData map[uint16]string `json:"apple_manufacturer_data,omitempty"`
+	ManufacturerData      map[uint16]string `json:"manufacturer_data,omitempty"`
+	UUIDs                 []string          `json:"service_uuids,omitempty"`
+}
+
 type Dashboard struct {
 	app    fyne.App
 	win    fyne.Window
@@ -41,6 +51,7 @@ type Dashboard struct {
 	capture     map[string][]int16
 	baseline    map[string]float64
 	near        map[string]float64
+	eventLog    []BLEEvent
 }
 
 func Run() error {
@@ -107,7 +118,11 @@ func (d *Dashboard) build() {
 					label.SetText(fmt.Sprintf("%d dBm", dev.RSSI))
 				}
 			case 3:
-				label.SetText("Erkannt")
+				if hasAppleManufacturerData(dev) {
+					label.SetText("Apple-Herstellerdaten")
+				} else {
+					label.SetText("Erkannt")
+				}
 			}
 		},
 	)
@@ -159,6 +174,18 @@ func (d *Dashboard) start() {
 			fyne.Do(func() {
 				d.mu.Lock()
 				d.devices[dev.Address] = dev
+				d.eventLog = append(d.eventLog, BLEEvent{
+					Timestamp:             time.Now(),
+					Address:               dev.Address,
+					Name:                  dev.Name,
+					RSSI:                  dev.RSSI,
+					AppleManufacturerData: appleData(dev.ManufacturerData),
+					ManufacturerData:      dev.ManufacturerData,
+					UUIDs:                 append([]string(nil), dev.UUIDs...),
+				})
+				if len(d.eventLog) > 20000 {
+					d.eventLog = append([]BLEEvent(nil), d.eventLog[len(d.eventLog)-20000:]...)
+				}
 				d.learnMu.Lock()
 				if d.learning && dev.RSSI != -127 {
 					d.capture[dev.Address] = append(d.capture[dev.Address], dev.RSSI)
@@ -428,6 +455,7 @@ func (d *Dashboard) exportDiagnostics() {
 	for _, dev := range d.devices {
 		snapshot = append(snapshot, dev)
 	}
+	events := append([]BLEEvent(nil), d.eventLog...)
 	d.mu.Unlock()
 	sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].Address < snapshot[j].Address })
 	dir, err := os.UserConfigDir()
@@ -444,10 +472,12 @@ func (d *Dashboard) exportDiagnostics() {
 		Created string         `json:"created"`
 		Note    string         `json:"note"`
 		Devices []bluez.Device `json:"devices"`
+		Events  []BLEEvent     `json:"events"`
 	}{
 		Created: time.Now().Format(time.RFC3339),
 		Note:    "BLE advertisements as exposed by BlueZ; identifiers and signal strength are not authentication.",
 		Devices: snapshot,
+		Events:  events,
 	}
 	data, err := json.MarshalIndent(payload, "", "  ")
 	if err == nil {
@@ -458,4 +488,16 @@ func (d *Dashboard) exportDiagnostics() {
 		return
 	}
 	d.status.SetText("BLE-Diagnose gespeichert: " + filepath.Join(dir, "ble-diagnostics.json"))
+}
+
+func appleData(data map[uint16]string) map[uint16]string {
+	if value, ok := data[0x004C]; ok {
+		return map[uint16]string{0x004C: value}
+	}
+	return nil
+}
+
+func hasAppleManufacturerData(dev bluez.Device) bool {
+	_, ok := dev.ManufacturerData[0x004C]
+	return ok
 }

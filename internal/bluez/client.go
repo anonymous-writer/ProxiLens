@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -155,7 +156,10 @@ func (c *Client) emit(d Device, fn func(Device)) {
 	old, exists := c.seen[d.Path]
 	c.seen[d.Path] = d
 	c.mu.Unlock()
-	if !exists || old.RSSI != d.RSSI || old.Name != d.Name || old.Address != d.Address {
+	if !exists || old.RSSI != d.RSSI || old.Name != d.Name || old.Address != d.Address ||
+		old.TxPower != d.TxPower || !reflect.DeepEqual(old.UUIDs, d.UUIDs) ||
+		!reflect.DeepEqual(old.ManufacturerData, d.ManufacturerData) ||
+		!reflect.DeepEqual(old.ServiceData, d.ServiceData) {
 		fn(d)
 	}
 }

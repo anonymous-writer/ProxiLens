@@ -127,3 +127,25 @@ private/rotierende Adressen verwenden. Aus Service-UUIDs oder Herstellerdaten
 allein folgt keine sichere Geräteidentität. Der Export enthält lokale
 Bluetooth-Umgebungsdaten; vor dem Teilen bitte prüfen und fremde Geräteadressen
 ggf. schwärzen.
+
+
+## Apple-BLE-Monitoring (experimentell)
+
+Die Geräteliste kennzeichnet Geräte mit Manufacturer Company ID `0x004C`
+(dezimal 76) als **Apple-Herstellerdaten**. Das ist ein Hinweis auf Apple-formatierte
+Werbedaten, aber kein Nachweis für eine Apple Watch: iPhone, AirPods und andere
+Apple-Geräte können dieselbe Company ID verwenden.
+
+Der Button **BLE-Diagnose exportieren** enthält jetzt zusätzlich `events`:
+zeitgestempelte Änderungen an Adresse, Name, RSSI, UUIDs und Herstellerdaten.
+Die Ereignisse werden im laufenden Programm im Speicher gesammelt (maximal 20.000)
+und beim Export zusammen mit dem aktuellen Gerätesnapshot gespeichert.
+BlueZ liefert nur die Daten, die Adapter und BlueZ tatsächlich bereitstellen;
+dies ist kein vollständiger Rohpaket-Mitschnitt und kein kontinuierlicher
+Bluetooth-HCI-Sniffer.
+
+Für den Vergleich bitte je zwei Minuten scannen:
+A) Watch nahe am Lenovo, iPhone mehrere Meter entfernt.
+B) Watch außer Reichweite, iPhone nahe am Lenovo.
+Jeweils Diagnose exportieren und die beiden JSON-Dateien getrennt sichern.
+Vor dem Teilen bitte fremde Geräteadressen prüfen/schwärzen.
