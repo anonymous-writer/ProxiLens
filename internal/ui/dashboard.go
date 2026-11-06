@@ -121,7 +121,8 @@ func (d *Dashboard) build() {
 	stop := widget.NewButton("Scan stoppen", d.stop)
 	refresh := widget.NewButton("Liste aktualisieren", func() { d.rows.Refresh() })
 	d.learnButton = widget.NewButton("Apple Watch anlernen", d.openLearningWizard)
-	actions := container.NewHBox(start, stop, refresh, d.learnButton)
+	diagnostics := widget.NewButton("BLE-Diagnose exportieren", d.exportDiagnostics)
+	actions := container.NewHBox(start, stop, refresh, d.learnButton, diagnostics)
 	note := widget.NewLabel("Hinweis: Die Erkennung von iPhone und Apple Watch wird zunächst empirisch geprüft. RSSI ist kein Authentifizierungsnachweis; diese Version sperrt oder entsperrt den Rechner nicht.")
 	note.Wrapping = fyne.TextWrapWord
 	note.TextStyle = fyne.TextStyle{Italic: true}
@@ -419,4 +420,42 @@ func saveLearnedWatch(c candidate) error {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, "apple-watch.json"), data, 0600)
+}
+
+func (d *Dashboard) exportDiagnostics() {
+	d.mu.Lock()
+	snapshot := make([]bluez.Device, 0, len(d.devices))
+	for _, dev := range d.devices {
+		snapshot = append(snapshot, dev)
+	}
+	d.mu.Unlock()
+	sort.Slice(snapshot, func(i, j int) bool { return snapshot[i].Address < snapshot[j].Address })
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		d.status.SetText("Diagnoseexport fehlgeschlagen: " + err.Error())
+		return
+	}
+	dir = filepath.Join(dir, "proxilens")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		d.status.SetText("Diagnoseexport fehlgeschlagen: " + err.Error())
+		return
+	}
+	payload := struct {
+		Created string         `json:"created"`
+		Note    string         `json:"note"`
+		Devices []bluez.Device `json:"devices"`
+	}{
+		Created: time.Now().Format(time.RFC3339),
+		Note:    "BLE advertisements as exposed by BlueZ; identifiers and signal strength are not authentication.",
+		Devices: snapshot,
+	}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err == nil {
+		err = os.WriteFile(filepath.Join(dir, "ble-diagnostics.json"), data, 0600)
+	}
+	if err != nil {
+		d.status.SetText("Diagnoseexport fehlgeschlagen: " + err.Error())
+		return
+	}
+	d.status.SetText("BLE-Diagnose gespeichert: " + filepath.Join(dir, "ble-diagnostics.json"))
 }

@@ -2,7 +2,9 @@ package bluez
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 
@@ -15,10 +17,14 @@ const (
 )
 
 type Device struct {
-	Path    dbus.ObjectPath
-	Name    string
-	Address string
-	RSSI    int16
+	Path             dbus.ObjectPath
+	Name             string
+	Address          string
+	RSSI             int16
+	TxPower          int16
+	UUIDs            []string
+	ManufacturerData map[uint16]string
+	ServiceData      map[string]string
 }
 
 type Client struct {
@@ -196,12 +202,43 @@ func apply(d *Device, props map[string]dbus.Variant) {
 			if s, ok := value.Value().(string); ok {
 				d.Address = s
 			}
-		case "RSSI":
-			switch n := value.Value().(type) {
+		case "RSSI", "TxPower":
+			var n int16
+			switch v := value.Value().(type) {
 			case int16:
-				d.RSSI = n
+				n = v
 			case int32:
-				d.RSSI = int16(n)
+				n = int16(v)
+			default:
+				continue
+			}
+			if key == "RSSI" {
+				d.RSSI = n
+			} else {
+				d.TxPower = n
+			}
+		case "UUIDs":
+			if values, ok := value.Value().([]string); ok {
+				d.UUIDs = append([]string(nil), values...)
+				sort.Strings(d.UUIDs)
+			}
+		case "ManufacturerData":
+			if values, ok := value.Value().(map[uint16]dbus.Variant); ok {
+				d.ManufacturerData = make(map[uint16]string, len(values))
+				for id, raw := range values {
+					if b, ok := raw.Value().([]byte); ok {
+						d.ManufacturerData[id] = hex.EncodeToString(b)
+					}
+				}
+			}
+		case "ServiceData":
+			if values, ok := value.Value().(map[string]dbus.Variant); ok {
+				d.ServiceData = make(map[string]string, len(values))
+				for uuid, raw := range values {
+					if b, ok := raw.Value().([]byte); ok {
+						d.ServiceData[uuid] = hex.EncodeToString(b)
+					}
+				}
 			}
 		}
 	}

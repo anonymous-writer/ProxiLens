@@ -110,3 +110,20 @@ nicht als Watch gespeichert werden. Eine speicherbare Kandidatenbewertung
 setzt voraus, dass dieselbe Adresse in Referenz- und Nahmessung vorkommt
 und sich ihr RSSI messbar verbessert. Bei rotierenden Apple-Adressen kann
 das weitere Messmethoden bzw. wiederholte Lernläufe erfordern.
+
+
+## BLE-Diagnosemodus
+
+Im Dashboard **BLE-Diagnose exportieren** anklicken. ProxiLens speichert die aktuell
+von BlueZ gelieferten Gerätedaten als JSON unter
+`~/.config/proxilens/ble-diagnostics.json` (Dateirechte 0600).
+Erfasst werden Name, Adresse, RSSI, TxPower, Service-UUIDs, Manufacturer Data
+und Service Data, soweit BlueZ diese Informationen vom Adapter bereitstellt.
+Alternativ zeigt `go run ./cmd/proxilens-scan` diese Felder im Terminal.
+
+Hinweis: BlueZ kann Werbedaten je nach Controller, BlueZ-Version und
+Betriebszustand unterschiedlich vollständig bereitstellen. Apple-Geräte können
+private/rotierende Adressen verwenden. Aus Service-UUIDs oder Herstellerdaten
+allein folgt keine sichere Geräteidentität. Der Export enthält lokale
+Bluetooth-Umgebungsdaten; vor dem Teilen bitte prüfen und fremde Geräteadressen
+ggf. schwärzen.

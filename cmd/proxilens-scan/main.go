@@ -35,8 +35,8 @@ func main() {
 	}()
 
 	if err := client.Watch(ctx, func(d bluez.Device) {
-		log.Printf("BLE-Gerät: %-24s RSSI: %4d dBm  Adresse: %s  Pfad: %s",
-			d.Name, d.RSSI, d.Address, d.Path)
+		log.Printf("BLE-Gerät: %-24s RSSI: %4d dBm TxPower: %4d dBm Adresse: %s UUIDs: %v Herstellerdaten: %v Servicedaten: %v",
+			d.Name, d.RSSI, d.TxPower, d.Address, d.UUIDs, d.ManufacturerData, d.ServiceData)
 	}); err != nil && ctx.Err() == nil {
 		log.Fatalf("D-Bus-Überwachung fehlgeschlagen: %v", err)
 	}
