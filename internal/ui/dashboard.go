@@ -62,8 +62,8 @@ func (d *Dashboard) build() {
 	d.lastScan = widget.NewLabel("Noch kein Scan")
 	kpi := container.NewGridWithColumns(3,
 		statCard("Gefundene Geräte", d.count),
-		statCard("Überwachung", "BLE-Scan"),
-		statCard("Sitzung", "Nicht verändert"),
+		statCard("Überwachung", widget.NewLabel("BLE-Scan")),
+		statCard("Sitzung", widget.NewLabel("Nicht verändert")),
 	)
 
 	d.rows = widget.NewTable(
@@ -202,7 +202,7 @@ func panel(obj fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewMax(bg, obj)
 }
 
-func color(hex string) fyne.Color {
+func color(hex string) stdcolor.Color {
 	c := theme.ForegroundColor()
 	if len(hex) == 7 {
 		var r, g, b uint8
@@ -214,7 +214,7 @@ func color(hex string) fyne.Color {
 
 type leaseLensTheme struct{ fyne.Theme }
 
-func (t leaseLensTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) fyne.Color {
+func (t leaseLensTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVariant) stdcolor.Color {
 	switch name {
 	case theme.ColorNameBackground:
 		return color("#0d1929")
