@@ -34,7 +34,7 @@ jobs:
           go build -o proxilens-scan-linux-amd64 ./cmd/proxilens-scan
 
       - name: Upload AMD64 test program
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ProxiLens-Linux-AMD64
           path: proxilens-scan-linux-amd64
