@@ -85,3 +85,18 @@ RSSI is only a proximity heuristic, not proof of identity. A nearby BLE advertis
 ## License
 
 No license has been selected yet. Choose and add a license before publishing the repository if you want to grant others explicit reuse rights.
+
+
+## Apple Watch Lernmodus (experimentell)
+
+1. Bluetooth-Scan im Dashboard starten.
+2. **Apple Watch anlernen** öffnen.
+3. Für die 30-Sekunden-Referenzmessung die Watch außer Reichweite legen.
+4. Anschließend die Watch neben den Rechner legen und die 60-Sekunden-Messung starten.
+5. Kandidaten prüfen und den passenden Eintrag speichern.
+
+Die Zuordnung wird lokal unter `~/.config/proxilens/apple-watch.json` gespeichert.
+Die Kandidatensuche vergleicht mittlere RSSI-Werte und neu sichtbare BLE-Adressen.
+Sie ist eine experimentelle Näherung: BLE-Adressen können rotieren und RSSI ist
+weder eine eindeutige Geräteidentität noch ein Authentifizierungsnachweis.
+Der Lernmodus entsperrt oder sperrt den Rechner nicht.

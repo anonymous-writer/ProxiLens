@@ -2,9 +2,13 @@ package ui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	stdcolor "image/color"
+	"os"
+	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,12 +29,18 @@ type Dashboard struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	mu       sync.Mutex
-	devices  map[string]bluez.Device
-	rows     *widget.Table
-	status   *widget.Label
-	count    *widget.Label
-	lastScan *widget.Label
+	mu          sync.Mutex
+	devices     map[string]bluez.Device
+	rows        *widget.Table
+	status      *widget.Label
+	count       *widget.Label
+	lastScan    *widget.Label
+	learnButton *widget.Button
+	learnMu     sync.Mutex
+	learning    bool
+	capture     map[string][]int16
+	baseline    map[string]float64
+	near        map[string]float64
 }
 
 func Run() error {
@@ -110,7 +120,8 @@ func (d *Dashboard) build() {
 	start.Importance = widget.HighImportance
 	stop := widget.NewButton("Scan stoppen", d.stop)
 	refresh := widget.NewButton("Liste aktualisieren", func() { d.rows.Refresh() })
-	actions := container.NewHBox(start, stop, refresh)
+	d.learnButton = widget.NewButton("Apple Watch anlernen", d.openLearningWizard)
+	actions := container.NewHBox(start, stop, refresh, d.learnButton)
 	note := widget.NewLabel("Hinweis: Die Erkennung von iPhone und Apple Watch wird zunächst empirisch geprüft. RSSI ist kein Authentifizierungsnachweis; diese Version sperrt oder entsperrt den Rechner nicht.")
 	note.Wrapping = fyne.TextWrapWord
 	note.TextStyle = fyne.TextStyle{Italic: true}
@@ -147,6 +158,11 @@ func (d *Dashboard) start() {
 			fyne.Do(func() {
 				d.mu.Lock()
 				d.devices[dev.Address] = dev
+				d.learnMu.Lock()
+				if d.learning && dev.RSSI != -127 {
+					d.capture[dev.Address] = append(d.capture[dev.Address], dev.RSSI)
+				}
+				d.learnMu.Unlock()
 				n := len(d.devices)
 				d.mu.Unlock()
 				d.count.SetText(fmt.Sprintf("%d", n))
@@ -232,4 +248,150 @@ func (t leaseLensTheme) Color(name fyne.ThemeColorName, variant fyne.ThemeVarian
 		return color("#29405c")
 	}
 	return t.Theme.Color(name, variant)
+}
+
+type learnedWatch struct {
+	Address     string  `json:"address"`
+	Learned     string  `json:"learned_at"`
+	ScoreDB     float64 `json:"score_db"`
+	AverageRSSI float64 `json:"average_rssi_dbm"`
+}
+
+func (d *Dashboard) openLearningWizard() {
+	if d.cancel == nil {
+		d.status.SetText("Bitte zuerst den Bluetooth-Scan starten")
+		return
+	}
+	w := d.app.NewWindow("ProxiLens · Apple Watch anlernen")
+	w.Resize(fyne.NewSize(560, 300))
+	info := widget.NewLabel("Geführtes Anlernen deiner Apple Watch\n\nSchritt 1: Lege die Apple Watch außer Reichweite. Das iPhone kann zunächst ebenfalls entfernt bleiben.")
+	info.Wrapping = fyne.TextWrapWord
+	progress := widget.NewLabel("Bereit für die Referenzmessung (30 Sekunden).")
+	startBaseline := widget.NewButton("Referenzmessung starten", nil)
+	startBaseline.Importance = widget.HighImportance
+	startNear := widget.NewButton("Apple Watch jetzt danebenlegen", nil)
+	startNear.Disable()
+	confirm := widget.NewButton("Besten Kandidaten als Apple Watch speichern", nil)
+	confirm.Disable()
+	candidateList := widget.NewLabel("")
+	candidateList.Wrapping = fyne.TextWrapWord
+
+	startBaseline.OnTapped = func() {
+		startBaseline.Disable()
+		d.captureFor(30*time.Second, func(samples map[string]float64) {
+			d.baseline = samples
+			progress.SetText("Referenzmessung abgeschlossen. Lege jetzt deine entsperrte Apple Watch direkt neben den Lenovo.")
+			startNear.Enable()
+		})
+	}
+	startNear.OnTapped = func() {
+		startNear.Disable()
+		progress.SetText("Messung läuft: Apple Watch neben dem Lenovo lassen (60 Sekunden).")
+		d.captureFor(60*time.Second, func(samples map[string]float64) {
+			d.near = samples
+			candidates := compareSamples(d.baseline, d.near)
+			if len(candidates) == 0 {
+				candidateList.SetText("Keine eindeutigen Kandidaten gefunden. Bitte erneut messen und die Watch näher an den Rechner legen.")
+				progress.SetText("Messung abgeschlossen – keine klare Zuordnung.")
+				return
+			}
+			var lines []string
+			for i, c := range candidates {
+				if i == 5 {
+					break
+				}
+				lines = append(lines, fmt.Sprintf("%d. %s · Ø %.0f dBm · +%.0f dB", i+1, c.Address, c.AverageRSSI, c.ScoreDB))
+			}
+			candidateList.SetText("Wahrscheinliche Kandidaten (bitte prüfen):\n" + strings.Join(lines, "\n"))
+			progress.SetText("Messung abgeschlossen. Wähle den besten Kandidaten durch Bestätigen aus.")
+			confirm.Enable()
+		})
+	}
+	confirm.OnTapped = func() {
+		candidates := compareSamples(d.baseline, d.near)
+		if len(candidates) == 0 {
+			return
+		}
+		if err := saveLearnedWatch(candidates[0]); err != nil {
+			progress.SetText("Speichern fehlgeschlagen: " + err.Error())
+			return
+		}
+		progress.SetText("Apple-Watch-Kandidat gespeichert: " + candidates[0].Address)
+		confirm.Disable()
+	}
+	w.SetContent(container.NewPadded(container.NewVBox(info, progress, startBaseline, startNear, candidateList, confirm)))
+	w.Show()
+}
+
+func (d *Dashboard) captureFor(duration time.Duration, done func(map[string]float64)) {
+	d.learnMu.Lock()
+	d.capture = make(map[string][]int16)
+	d.learning = true
+	d.learnMu.Unlock()
+	go func() {
+		time.Sleep(duration)
+		d.learnMu.Lock()
+		d.learning = false
+		result := make(map[string]float64, len(d.capture))
+		for addr, values := range d.capture {
+			if len(values) == 0 {
+				continue
+			}
+			var total int
+			for _, v := range values {
+				total += int(v)
+			}
+			result[addr] = float64(total) / float64(len(values))
+		}
+		d.learnMu.Unlock()
+		fyne.Do(func() { done(result) })
+	}()
+}
+
+type candidate struct {
+	Address     string
+	AverageRSSI float64
+	ScoreDB     float64
+}
+
+func compareSamples(baseline, near map[string]float64) []candidate {
+	var out []candidate
+	for addr, nearRSSI := range near {
+		baseRSSI, existed := baseline[addr]
+		delta := nearRSSI - baseRSSI
+		if existed {
+			if delta >= 6 {
+				out = append(out, candidate{Address: addr, AverageRSSI: nearRSSI, ScoreDB: delta})
+			}
+			continue
+		}
+		// Newly observed devices are candidates only when their signal is
+		// reasonably strong; rank them by signal strength, not as proof.
+		if nearRSSI >= -90 {
+			out = append(out, candidate{Address: addr, AverageRSSI: nearRSSI, ScoreDB: nearRSSI + 100})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ScoreDB > out[j].ScoreDB })
+	return out
+}
+
+func saveLearnedWatch(c candidate) error {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return err
+	}
+	dir = filepath.Join(dir, "proxilens")
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(learnedWatch{
+		Address:     c.Address,
+		Learned:     time.Now().Format(time.RFC3339),
+		ScoreDB:     c.ScoreDB,
+		AverageRSSI: c.AverageRSSI,
+	}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(dir, "apple-watch.json"), data, 0600)
 }
