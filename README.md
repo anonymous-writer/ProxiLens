@@ -1,62 +1,87 @@
-# ProxiLens – Bluetooth-Proximity für Ubuntu 24.04
+# ProxiLens
 
-Eigenständige Go-Neuentwicklung für Ubuntu 24.04 LTS / GNOME. Das Dashboard orientiert sich an der visuellen Sprache von LeaseLens (Navy `#0d1929`, Karten `#16263b`, Akzentblau `#58a9ff`, feine blaue Rahmen).
+**Bluetooth proximity diagnostics for Ubuntu 24.04 LTS / GNOME**, written in Go.
 
-## Entwicklungsstand: Phase 1 – BLE-Diagnose
+> Current status: Phase 1 (BLE discovery and diagnostics). Automatic locking and unlocking are not implemented yet.
 
-- BlueZ über D-Bus anbinden
-- Bluetooth-LE-Discovery starten und sichtbare Geräte samt RSSI erfassen
-- Fyne-Dashboard zur Live-Anzeige der gefundenen Geräte
-- **Noch keine automatische Sperre oder Entsperrung**
+## Features in this phase
 
-Die Erkennung von iPhone und Apple Watch muss am Zielrechner praktisch geprüft werden. Apple-Geräte können private/wechselnde BLE-Adressen verwenden und senden nicht zwingend dauerhaft identifizierbare Werbung. Die macOS-CoreBluetooth- und Bluetooth-Cache-Logik des ursprünglichen BLEUnlock lässt sich nicht unverändert auf Linux übertragen.
+- Discover Bluetooth Low Energy devices through BlueZ/D-Bus.
+- Display discovered devices and signal strength (RSSI) in a Fyne desktop dashboard.
+- Provide a command-line scanner for troubleshooting.
+- GitHub Actions CI checks formatting, tests, vet, and builds both applications.
 
-## Voraussetzungen
+## Requirements
+
+- Ubuntu 24.04 LTS (GNOME)
+- Go 1.22 or newer
+- BlueZ
+- Fyne build dependencies
+
+Install system packages:
 
 ```bash
 sudo apt update
-sudo apt install golang-go bluez libgl1-mesa-dev xorg-dev
+sudo apt install -y golang-go bluez libgl1-mesa-dev xorg-dev
 sudo systemctl enable --now bluetooth
-bluetoothctl show
 ```
 
-Für den Build wird Go 1.22 oder neuer benötigt. Im Projektverzeichnis:
+## Run from source
 
 ```bash
+git clone https://github.com/OWNER/REPOSITORY.git
+cd proxilens
 go mod tidy
-```
-
-## Start
-
-Live-Dashboard:
-
-```bash
 go run ./cmd/proxilens-ui
 ```
 
-Konsolen-Diagnose:
+CLI scanner:
 
 ```bash
 go run ./cmd/proxilens-scan
 ```
 
-Falls BlueZ den Scan nicht starten lässt, zunächst interaktiv prüfen:
+## GitHub repository setup
+
+1. Create a new **public or private repository** on GitHub named `proxilens`.
+2. Replace `OWNER/REPOSITORY` in this README and `.github/ISSUE_TEMPLATE/config.yml` with your GitHub owner and repository.
+3. Set the Go module path to your real repository path. For example, if your GitHub account is `my-account`, change `module github.com/local/proxilens` in `go.mod` to `module github.com/my-account/proxilens`, then replace all imports beginning with `github.com/local/proxilens/` with `github.com/my-account/proxilens/`.
+4. Run `go mod tidy`, then commit **both** `go.mod` and `go.sum`.
+5. Push the project to the `main` branch.
+
+Example commands after creating the empty GitHub repository (replace the URL):
 
 ```bash
-bluetoothctl
-# scan on
+git init
+git add .
+git commit -m "chore: initial ProxiLens project"
+git branch -M main
+git remote add origin https://github.com/OWNER/REPOSITORY.git
+git push -u origin main
 ```
 
-## Nächste Entwicklungsschritte
+The workflow in `.github/workflows/ci.yml` runs automatically on pushes to `main` and pull requests.
 
-1. Scan-Ergebnisse auf dem Zielsystem mit iPhone und Apple Watch erfassen.
-2. Sichtbare Namen, Service-UUIDs, Manufacturer-Data und Adressstabilität auswerten.
-3. Gerätebindung belastbar gestalten; nicht allein auf Name, MAC oder RSSI vertrauen.
-4. RSSI-Filter, Hysterese, Verzögerungen und Signal-Timeout ergänzen.
-5. Sitzungssperre über `loginctl lock-session` integrieren.
-6. Einen systemd-User-Dienst und eine Installationsroutine ergänzen.
-7. Entsperrung separat mit einem überprüfbaren kryptografischen Authentifizierungsverfahren entwerfen.
+## Creating a release
 
-## Sicherheit
+Create a version tag such as `v0.1.0`, then create and publish a GitHub Release for that tag. The release workflow builds Linux amd64 binaries for the GUI and CLI, packages them into a `.tar.gz`, generates a SHA-256 checksum, and attaches both files to the GitHub Release.
 
-RSSI ist eine Näherungsheuristik, kein Authentifizierungsnachweis. Ein BLE-Gerät in Reichweite oder eine kopierte Kennung darf nicht allein die Sitzung entsperren. Ein PAM-Modul nach dem Muster „BLE-Gerät gesehen = Anmeldung erfolgreich“ wird ausdrücklich nicht implementiert. Die GNOME-/GDM-Anmeldung muss jederzeit per regulärem Passwort bzw. bestehendem Anmeldeverfahren möglich bleiben.
+## Development commands
+
+```bash
+gofmt -w .
+go test ./...
+go vet ./...
+go build ./cmd/proxilens-scan
+go build ./cmd/proxilens-ui
+```
+
+## Current limitations and security
+
+The iPhone and Apple Watch detection behavior must be validated on the target hardware. Apple devices may use private or rotating BLE addresses and do not necessarily advertise a stable, continuously identifiable signal.
+
+RSSI is only a proximity heuristic, not proof of identity. A nearby BLE advertisement must never be sufficient to authenticate or unlock a user session. A future implementation should preserve normal GNOME/GDM authentication and use a cryptographically verifiable mechanism for any unlock-related feature.
+
+## License
+
+No license has been selected yet. Choose and add a license before publishing the repository if you want to grant others explicit reuse rights.
