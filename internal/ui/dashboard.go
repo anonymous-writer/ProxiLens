@@ -300,11 +300,27 @@ func (d *Dashboard) openLearningWizard() {
 				if i == 5 {
 					break
 				}
-				lines = append(lines, fmt.Sprintf("%d. %s · Ø %.0f dBm · +%.0f dB", i+1, c.Address, c.AverageRSSI, c.ScoreDB))
+				if c.NewDevice {
+					lines = append(lines, fmt.Sprintf("%d. %s · Ø %.0f dBm · neu entdeckt (keine Delta-Messung)", i+1, c.Address, c.AverageRSSI))
+				} else {
+					lines = append(lines, fmt.Sprintf("%d. %s · Ø %.0f dBm · +%.0f dB", i+1, c.Address, c.AverageRSSI, c.ScoreDB))
+				}
 			}
 			candidateList.SetText("Wahrscheinliche Kandidaten (bitte prüfen):\n" + strings.Join(lines, "\n"))
-			progress.SetText("Messung abgeschlossen. Wähle den besten Kandidaten durch Bestätigen aus.")
-			confirm.Enable()
+			hasComparable := false
+			for _, c := range candidates {
+				if !c.NewDevice {
+					hasComparable = true
+					break
+				}
+			}
+			if hasComparable {
+				progress.SetText("Messung abgeschlossen. Prüfe den Kandidaten. Eine Zuordnung bleibt experimentell.")
+				confirm.Enable()
+			} else {
+				progress.SetText("Keine Adresse in beiden Messphasen wiedererkannt. Kandidaten sind nur neu entdeckte Geräte; Speichern ist deshalb deaktiviert. Wir benötigen weitere Messungen.")
+				confirm.Disable()
+			}
 		})
 	}
 	confirm.OnTapped = func() {
@@ -352,26 +368,35 @@ type candidate struct {
 	Address     string
 	AverageRSSI float64
 	ScoreDB     float64
+	NewDevice   bool
 }
 
 func compareSamples(baseline, near map[string]float64) []candidate {
 	var out []candidate
 	for addr, nearRSSI := range near {
 		baseRSSI, existed := baseline[addr]
-		delta := nearRSSI - baseRSSI
 		if existed {
+			delta := nearRSSI - baseRSSI
 			if delta >= 6 {
 				out = append(out, candidate{Address: addr, AverageRSSI: nearRSSI, ScoreDB: delta})
 			}
 			continue
 		}
-		// Newly observed devices are candidates only when their signal is
-		// reasonably strong; rank them by signal strength, not as proof.
+		// A new address is shown as a lead only. It has no measured delta and
+		// must never be auto-selected or saved as the watch identity.
 		if nearRSSI >= -90 {
-			out = append(out, candidate{Address: addr, AverageRSSI: nearRSSI, ScoreDB: nearRSSI + 100})
+			out = append(out, candidate{Address: addr, AverageRSSI: nearRSSI, NewDevice: true})
 		}
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ScoreDB > out[j].ScoreDB })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].NewDevice != out[j].NewDevice {
+			return !out[i].NewDevice
+		}
+		if out[i].NewDevice {
+			return out[i].AverageRSSI > out[j].AverageRSSI
+		}
+		return out[i].ScoreDB > out[j].ScoreDB
+	})
 	return out
 }
 

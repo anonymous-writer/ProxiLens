@@ -100,3 +100,13 @@ Die Kandidatensuche vergleicht mittlere RSSI-Werte und neu sichtbare BLE-Adresse
 Sie ist eine experimentelle Näherung: BLE-Adressen können rotieren und RSSI ist
 weder eine eindeutige Geräteidentität noch ein Authentifizierungsnachweis.
 Der Lernmodus entsperrt oder sperrt den Rechner nicht.
+
+
+### Hinweis zur Kandidatenbewertung
+
+Neu auftauchende BLE-Adressen werden nur als „neu entdeckt“ angezeigt.
+Für sie wird keine künstliche RSSI-Verbesserung berechnet und sie können
+nicht als Watch gespeichert werden. Eine speicherbare Kandidatenbewertung
+setzt voraus, dass dieselbe Adresse in Referenz- und Nahmessung vorkommt
+und sich ihr RSSI messbar verbessert. Bei rotierenden Apple-Adressen kann
+das weitere Messmethoden bzw. wiederholte Lernläufe erfordern.
