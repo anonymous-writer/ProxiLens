@@ -17,14 +17,23 @@ jobs:
   test-and-build:
     name: Test and build (Ubuntu)
     runs-on: ubuntu-24.04
+
     steps:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Install Fyne system dependencies
+      - name: Install Linux and Fyne dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            xorg-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            wayland-protocols
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -33,7 +42,7 @@ jobs:
           cache: true
 
       - name: Resolve dependencies
-        run: go mod tidy
+        run: go mod download
 
       - name: Check formatting
         run: |
@@ -50,4 +59,6 @@ jobs:
         run: go vet ./...
 
       - name: Build dashboard
-        run: go build -trimpath -o dist/proxilens-ui ./cmd/proxilens-ui
+        run: |
+          mkdir -p dist
+          go build -trimpath -o dist/proxilens-ui ./cmd/proxilens-ui
