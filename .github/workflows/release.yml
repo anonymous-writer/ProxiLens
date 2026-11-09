@@ -1,3 +1,4 @@
+
 name: Build GitHub release
 
 on:
@@ -40,6 +41,18 @@ jobs:
       - name: Resolve dependencies
         run: go mod download
 
+      - name: Check UI package
+        run: |
+          echo "Available Go packages:"
+          go list ./...
+
+          echo "Checking expected UI package:"
+          if [ ! -d "./cmd/proxilens-ui" ]; then
+            echo "::error::Directory ./cmd/proxilens-ui does not exist."
+            echo "Please update the build target to the actual UI package."
+            exit 1
+          fi
+
       - name: Build binaries
         env:
           VERSION: ${{ github.event.release.tag_name }}
@@ -76,3 +89,4 @@ jobs:
             "dist/ProxiLens-${TAG}-linux-amd64.tar.gz" \
             "dist/ProxiLens-${TAG}-linux-amd64.tar.gz.sha256" \
             --clobber
+

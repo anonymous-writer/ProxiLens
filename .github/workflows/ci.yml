@@ -1,3 +1,4 @@
+
 name: CI
 
 on:
@@ -58,7 +59,20 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
+      - name: Check UI package
+        run: |
+          echo "Available Go packages:"
+          go list ./...
+
+          echo "Checking expected UI package:"
+          if [ ! -d "./cmd/proxilens-ui" ]; then
+            echo "::error::Directory ./cmd/proxilens-ui does not exist."
+            echo "Please update the build target to the actual UI package."
+            exit 1
+          fi
+
       - name: Build dashboard
         run: |
           mkdir -p dist
           go build -trimpath -o dist/proxilens-ui ./cmd/proxilens-ui
+
