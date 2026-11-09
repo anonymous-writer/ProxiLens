@@ -1,0 +1,7 @@
+bin/
+dist/
+*.deb
+*.log
+.DS_Store
+.idea/
+.vscode/

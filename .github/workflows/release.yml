@@ -1,0 +1,54 @@
+name: Build GitHub release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  linux-amd64:
+    name: Build Linux amd64 release
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Install Fyne system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1-mesa-dev xorg-dev
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve dependencies
+        run: go mod tidy
+
+      - name: Build binaries
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/proxilens
+          go build -trimpath -ldflags="-s -w" -o dist/proxilens/proxilens-ui ./cmd/proxilens-ui
+          cp README.md dist/proxilens/
+          printf '%s\\n' "$VERSION" > dist/proxilens/VERSION
+          tar -czf "dist/ProxiLens-${VERSION}-linux-amd64.tar.gz" -C dist proxilens
+          sha256sum "dist/ProxiLens-${VERSION}-linux-amd64.tar.gz" > "dist/ProxiLens-${VERSION}-linux-amd64.tar.gz.sha256"
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$TAG" \
+            "dist/ProxiLens-${TAG}-linux-amd64.tar.gz" \
+            "dist/ProxiLens-${TAG}-linux-amd64.tar.gz.sha256" \
+            --clobber
