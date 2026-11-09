@@ -95,6 +95,18 @@ keine PAM-, GDM- oder GNOME-Konfiguration.
 Während eines laufenden Device-Flows verbirgt die Fensterschaltfläche X nur das Fenster. Die Autorisierung läuft weiter; nach ihrem Abschluss wird das Fenster wieder eingeblendet. Die Desktop-Entsperrung bleibt deaktiviert.
 
 
-## Experimenteller Wake-Agent (Alpha.2)
+## Experimenteller Wake-Agent (Alpha.3)
 
 Ein optionaler systemd-Benutzerdienst für Duo Push nach dem Aufwachen aus dem Energiesparmodus ist enthalten. Installation und Einschränkungen: [README-WAKE-AGENT.md](README-WAKE-AGENT.md). Die Erkennung der ersten Eingabe am GNOME-Wayland-Sperrbildschirm ist noch nicht enthalten.
+
+
+## Alpha.6: Duo ausschließlich nach Sleep/Wake
+
+Der optionale Wake-Agent kann in Alpha.6 den logind-Status `LockedHint` der
+aktiven Wayland-Sitzung beobachten. Eine normale Bildschirmsperre mit
+`Super+L` löst keinen Duo-Push aus. Der Duo-Ablauf wird ausschließlich nach
+Sleep/Wake gestartet und nur dann fortgesetzt, wenn die Sitzung weiterhin
+gesperrt ist. PAM und GDM werden nicht verändert. Details und Testplan:
+[README-ALPHA6-TEST.md](README-ALPHA6-TEST.md).
+
+Die Alpha.6 ist experimentell und muss auf dem Zielgerät getestet werden.

@@ -1,0 +1,7 @@
+{
+  "uuid": "proxilens-input@local",
+  "name": "ProxiLens Lock Input Trigger",
+  "description": "Signals the first input event while the GNOME screen is locked to the ProxiLens user agent. Does not record keys or pointer coordinates.",
+  "shell-version": ["50"],
+  "version": 1
+}

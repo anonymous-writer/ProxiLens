@@ -1,5 +1,6 @@
-// proxilens-wake-agent is an opt-in experimental logind resume watcher.
-// It only starts Duo when the current Wayland session is already locked.
+// proxilens-wake-agent watches logind resume events and the logind LockedHint
+// state. Normal screen-lock transitions are observed only; Duo is triggered
+// exclusively after resume from sleep, and only if the session remains locked.
 package main
 
 import (
@@ -18,60 +19,138 @@ import (
 	"github.com/local/proxilens/internal/session"
 )
 
+type coordinator struct {
+	mu        sync.Mutex
+	sessionID string
+	locked    bool
+	known     bool
+	triggered bool // one resume authentication attempt per lock cycle
+	running   bool
+}
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
-	log.Println("ProxiLens experimental wake agent started; waiting for logind resume")
-	var mu sync.Mutex
-	running := false
+	log.Println("ProxiLens experimental agent started; watching logind resume and LockedHint")
+	c := &coordinator{}
+	go c.watchLockedHint()
+	c.watchLogind()
+}
+
+func (c *coordinator) setSessionState(s session.State) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.sessionID != s.ID {
+		c.sessionID = s.ID
+		c.triggered = false
+	}
+	if !c.known {
+		// Initial observation must not erase a resume trigger that raced
+		// with the first poll.
+		c.locked = s.Locked
+		c.known = true
+		log.Printf("logind LockedHint initial: Sitzung %s gesperrt=%t", s.ID, s.Locked)
+		return
+	}
+	if c.locked != s.Locked {
+		c.locked = s.Locked
+		c.triggered = false
+		if s.Locked {
+			log.Printf("logind LockedHint: Sitzung %s ist gesperrt", s.ID)
+		} else {
+			log.Printf("logind LockedHint: Sitzung %s ist entsperrt", s.ID)
+		}
+	}
+}
+
+func (c *coordinator) watchLockedHint() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	var lastError string
+	for {
+		s, err := session.Current()
+		if err != nil {
+			message := err.Error()
+			if message != lastError {
+				log.Printf("logind-Sperrstatus momentan nicht verfügbar: %v", err)
+				lastError = message
+			}
+		} else {
+			lastError = ""
+			c.setSessionState(s)
+		}
+		<-ticker.C
+	}
+}
+
+func (c *coordinator) watchLogind() {
 	for {
 		cmd := exec.Command("dbus-monitor", "--system", "type='signal',interface='org.freedesktop.login1.Manager',member='PrepareForSleep'")
 		stdout, err := cmd.StdoutPipe()
 		if err != nil {
-			log.Printf("dbus-monitor stdout: %v", err)
+			log.Printf("logind monitor stdout: %v", err)
 			time.Sleep(3 * time.Second)
 			continue
 		}
 		if err = cmd.Start(); err != nil {
-			log.Printf("dbus-monitor start: %v", err)
+			log.Printf("logind monitor start: %v", err)
 			time.Sleep(3 * time.Second)
 			continue
 		}
 		scanner := bufio.NewScanner(stdout)
 		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			// logind emits PrepareForSleep(false) after resume.
-			if line == "boolean false" {
-				mu.Lock()
-				if !running {
-					running = true
-					go func() {
-						defer func() { mu.Lock(); running = false; mu.Unlock() }()
-						if err := onResume(); err != nil {
-							log.Printf("resume authentication not completed: %v", err)
-						}
-					}()
-				}
-				mu.Unlock()
+			if strings.TrimSpace(scanner.Text()) == "boolean false" {
+				// Give NetworkManager, DNS and GNOME time to restore after resume.
+				go func() {
+					time.Sleep(2 * time.Second)
+					c.triggerResume()
+				}()
 			}
 		}
 		_ = cmd.Wait()
 		if err := scanner.Err(); err != nil {
-			log.Printf("dbus-monitor read: %v", err)
+			log.Printf("logind monitor read: %v", err)
 		}
 		log.Println("logind monitor stopped; reconnecting")
 		time.Sleep(3 * time.Second)
 	}
 }
 
-func onResume() error {
-	// Allow logind/GNOME to restore the session state before inspecting it.
-	time.Sleep(2 * time.Second)
+// triggerResume is the only authentication trigger in this version. A normal
+// Super+L lock never starts Duo. authenticateAndUnlock independently verifies
+// LockedHint before contacting Authelia and again before unlocking.
+func (c *coordinator) triggerResume() {
+	c.mu.Lock()
+	if c.running || c.triggered {
+		c.mu.Unlock()
+		return
+	}
+	c.running = true
+	c.triggered = true
+	c.mu.Unlock()
+
+	go func() {
+		defer func() {
+			c.mu.Lock()
+			c.running = false
+			c.mu.Unlock()
+		}()
+		log.Println("Sleep/Wake erkannt; prüfe, ob die Sitzung weiterhin gesperrt ist")
+		if err := authenticateAndUnlock(); err != nil {
+			log.Printf("Duo nach Sleep/Wake nicht abgeschlossen: %v", err)
+		}
+	}()
+}
+
+func authenticateAndUnlock() error {
+	// Confirm that this is still the active, locked Wayland user session.
 	s, err := session.Current()
 	if err != nil {
 		return err
 	}
 	if !s.Locked {
-		return nil
+		return fmtError("Sitzung ist nicht gesperrt; Sleep/Wake löst keine Authentifizierung aus")
 	}
 
 	dbPath, err := configstore.DefaultPath()
@@ -115,8 +194,7 @@ func (e simpleError) Error() string { return string(e) }
 func fmtError(s string) error       { return simpleError(s) }
 
 // waitForAutheliaNetwork waits until DNS resolution and a TCP connection to
-// the configured Authelia host succeed. Resume can be delivered before Wi-Fi,
-// routing, or the local DNS stub is ready.
+// the configured Authelia host succeed. Resume may precede network readiness.
 func waitForAutheliaNetwork(ctx context.Context, rawURL string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Hostname() == "" {
@@ -138,7 +216,7 @@ func waitForAutheliaNetwork(ctx context.Context, rawURL string) error {
 	var lastErr error
 	for attempt, delay := range delays {
 		if delay > 0 {
-			log.Printf("Netzwerk nach Resume noch nicht bereit; nächster Versuch in %s", delay)
+			log.Printf("Netzwerk noch nicht bereit; nächster Versuch in %s", delay)
 			timer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
@@ -158,5 +236,5 @@ func waitForAutheliaNetwork(ctx context.Context, rawURL string) error {
 		lastErr = dialErr
 		log.Printf("Authelia noch nicht erreichbar (Versuch %d/%d): %v", attempt+1, len(delays), dialErr)
 	}
-	return fmtError("Authelia nach Resume nicht erreichbar: " + lastErr.Error())
+	return fmtError("Authelia nicht erreichbar: " + lastErr.Error())
 }

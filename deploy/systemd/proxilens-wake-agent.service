@@ -1,5 +1,5 @@
 [Unit]
-Description=ProxiLens experimental Duo-on-resume agent
+Description=ProxiLens experimental Duo-after-sleep agent
 After=graphical-session.target
 PartOf=graphical-session.target
 
