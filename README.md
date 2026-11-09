@@ -1,164 +1,176 @@
-# ProxiLens 0.0.2 – Alpha.7.3.1
+# ProxiLens 0.0.2 -- Alpha.7.3.1
 
-ProxiLens ist ein experimenteller GNOME-/Ubuntu-Prototyp mit einem optionalen
-Benutzer-Agenten für Sleep/Wake und einem Duo-Button im GNOME-Sperrbildschirm.
-Der aktuelle Teststand ist für Ubuntu mit GNOME Shell 50.x und eine Wayland-
-Benutzersitzung ausgelegt.
+ProxiLens is an experimental GNOME/Ubuntu prototype with an optional
+user agent for Sleep/Wake handling and a Duo button on the GNOME lock
+screen. The current test version is designed for Ubuntu with GNOME Shell
+50.x in a Wayland user session.
 
-> **Status:** Alpha-/Testsoftware. Der hier beschriebene Ablauf wurde auf dem
-> Zielgerät des Projekts (GNOME Shell 50.1, Wayland) praktisch getestet. Das ist
-> kein allgemeines Sicherheitsversprechen für andere Systeme oder Versionen.
+> **Status:** Alpha/test software. The workflow described here has been
+> tested on the project's target device (GNOME Shell 50.1, Wayland).
+> This is not a general security guarantee for other systems or
+> versions.
 
-## Aktueller Funktionsumfang
+## Current feature set
 
-### GNOME-Sperrbildschirm und Duo-Button
+### GNOME lock screen and Duo button
 
-- Die GNOME-Erweiterung zeigt im `unlock-dialog` den Button **„Mit Duo entsperren“**.
-- Ein bewusster Klick sendet `DuoUnlockRequested` über den Session-D-Bus an den
-  ProxiLens-Benutzer-Agenten.
-- Der Agent liest die gespeicherten Authelia-Zugangsdaten aus dem vorhandenen
-  ProxiLens-Konfigurationsspeicher und fordert Authelia/Duo zur Authentifizierung auf.
-- Nach erfolgreicher Duo-Bestätigung prüft der Agent erneut, dass dieselbe aktive
-  Wayland-Sitzung weiterhin gesperrt ist, und fordert dann `loginctl unlock-session`
-  für diese Sitzung an.
-- Auf dem getesteten Gerät wurde der Desktop nach erfolgreicher Duo-Bestätigung
-  ohne erneute Eingabe des Ubuntu-Passworts freigegeben.
-- GNOME meldet den Wechsel zwischen `unlock-dialog` und `user`; zusätzlich wird
-  `LockedHint` über logind beobachtet.
+-   The GNOME extension displays the **"Unlock with Duo"** button in
+    `unlock-dialog`.
+-   Clicking the button explicitly sends `DuoUnlockRequested` over the
+    session D-Bus to the ProxiLens user agent.
+-   The agent reads the stored Authelia credentials from the existing
+    ProxiLens configuration store and requests authentication through
+    Authelia/Duo.
+-   After successful Duo confirmation, the agent checks again that the
+    same active Wayland session is still locked, then requests
+    `loginctl unlock-session` for that session.
+-   On the tested device, the desktop was unlocked after successful Duo
+    confirmation without requiring the Ubuntu password to be entered
+    again.
+-   GNOME reports transitions between `unlock-dialog` and `user`;
+    `LockedHint` is also monitored through logind.
 
-### Duo-Statusanzeige
+### Duo status display
 
-Der Agent meldet Zustandswechsel an den Button zurück:
+The agent reports state changes back to the button:
 
-1. `LOCKED`
-2. `DUO_PENDING`
-3. `DUO_SUCCESS`
-4. `UNLOCK_REQUESTED`
-5. `UNLOCKED` – erst wenn GNOME den Wechsel aus dem Entsperrdialog meldet
-6. `FAILED` – bei fehlgeschlagener Authentifizierung oder Entsperranforderung
+1.  `LOCKED`
+2.  `DUO_PENDING`
+3.  `DUO_SUCCESS`
+4.  `UNLOCK_REQUESTED`
+5.  `UNLOCKED` -- only after GNOME reports leaving the unlock dialog
+6.  `FAILED` -- if authentication or the unlock request fails
 
-Alpha.7.3.1 dedupliziert diese Zustandsmeldungen zentral. Wenn GNOME-Moduswechsel
-und Authentifizierungsablauf denselben Zustand nahezu gleichzeitig melden, wird
-der Status nur einmal protokolliert und einmal an die Erweiterung gesendet.
+Alpha.7.3.1 centrally deduplicates these state notifications. If a GNOME
+mode transition and the authentication workflow report the same state at
+nearly the same time, the status is logged only once and sent to the
+extension only once.
 
 ### Sleep/Wake
 
-- Der Benutzer-Agent beobachtet logind `PrepareForSleep`.
-- Nach dem Aufwachen wird die Netzwerkverfügbarkeit erneut geprüft, weil DNS und
-  Netzwerkdienste nach Resume verzögert verfügbar sein können.
-- Duo wird nach Sleep/Wake nur fortgesetzt, wenn die Sitzung weiterhin gesperrt ist.
-- Die Sleep/Wake-Funktion ist unabhängig vom manuellen Klick auf den Duo-Button.
+-   The user agent monitors logind `PrepareForSleep`.
+-   After resume, network availability is checked again because DNS and
+    network services may take some time to become available.
+-   The Duo flow after Sleep/Wake proceeds only if the session is still
+    locked.
+-   Sleep/Wake handling is independent of clicking the Duo button
+    manually.
 
-## Was ProxiLens nicht verändert
+## What ProxiLens does not change
 
-- Keine Änderung an `/etc/pam.d/*`, PAM oder GDM.
-- Keine Änderung an der normalen GNOME-Sperrbildschirm-Konfiguration.
-- Kein automatisches Duo beim normalen `Super+L`; dort bleibt der explizite Button-Klick erforderlich.
-- Keine Freigabe allein aufgrund des GNOME-Statussignals. Der Agent prüft die
-  Authelia-/Duo-Antwort und den aktuellen logind-Sperrstatus vor der Freigabe.
+-   No changes are made to `/etc/pam.d/*`, PAM, or GDM.
+-   The normal GNOME lock-screen configuration is not changed.
+-   No automatic Duo request is started by pressing `Super+L`; an
+    explicit click on the button is required.
+-   The session is not unlocked solely because of a GNOME status signal.
+    Before unlocking, the agent checks the Authelia/Duo response and the
+    current logind lock status.
 
-## Voraussetzungen
+## Requirements
 
-- Ubuntu mit GNOME Shell 50.x (Erweiterungsinstaller prüft GNOME 50.x).
-- Wayland-Benutzersitzung.
-- `systemd-logind`, `loginctl`, `dbus-monitor`, `gdbus`.
-- Go 1.26.0 oder neuer entsprechend `go.mod`.
-- Eine bereits eingerichtete ProxiLens-Konfiguration mit Authelia-URL,
-  Authelia-Benutzername und gespeichertem Authelia-Passwort.
-- Eine erreichbare Authelia-Instanz und ein eingerichteter Duo-Zweitfaktor.
+-   Ubuntu with GNOME Shell 50.x (the extension installer checks for
+    GNOME 50.x).
+-   A Wayland user session.
+-   `systemd-logind`, `loginctl`, `dbus-monitor`, and `gdbus`.
+-   Go 1.26.0 or newer, as specified in `go.mod`.
+-   An existing ProxiLens configuration containing the Authelia URL,
+    Authelia username, and stored Authelia password.
+-   A reachable Authelia instance and a configured Duo second factor.
 
-## Installation / Aktualisierung
+## Installation / update
 
-Die bisherige funktionierende Version vorher als Rückfallkopie behalten. ZIP in
-ein eigenes Verzeichnis entpacken und dort ausführen:
+Keep the previously working version as a rollback copy. Extract the ZIP
+into its own directory and run the following commands there:
 
-```bash
+``` bash
 bash deploy/install-wake-agent.sh
 bash deploy/install-gnome-extension.sh
 systemctl --user restart proxilens-wake-agent.service
 ```
 
-Erweiterungsstatus prüfen:
+Check the extension status:
 
-```bash
+``` bash
 gnome-extensions info proxilens-input@local
 ```
 
-Agent-Logs verfolgen:
+Follow the agent logs:
 
-```bash
+``` bash
 journalctl --user -u proxilens-wake-agent.service -f
 ```
 
-GNOME-Erweiterungen können nach Updates oder einem Wechsel des Session-Modus neu
-initialisiert werden. Falls der Button nicht erscheint:
+GNOME extensions may be reinitialized after updates or session-mode
+changes. If the button does not appear, reload the extension:
 
-```bash
+``` bash
 gnome-extensions disable proxilens-input@local
 gnome-extensions enable proxilens-input@local
 ```
 
-## Testablauf
+## Test procedure
 
-1. `Super+L` drücken und prüfen, ob „Mit Duo entsperren“ erscheint.
-2. Den Button anklicken.
-3. Den Duo-Push auf dem iPhone bestätigen.
-4. Prüfen, dass der Desktop ohne erneute Ubuntu-Passworteingabe freigegeben wird.
-5. Sleep/Wake separat testen und prüfen, dass bei weiterhin gesperrter Sitzung der
-   bisherige Duo-Ablauf erhalten bleibt.
+1.  Press `Super+L` and check whether **"Unlock with Duo"** appears.
+2.  Click the button.
+3.  Approve the Duo push on your iPhone.
+4.  Check that the desktop is unlocked without entering the Ubuntu
+    password again.
+5.  Test Sleep/Wake separately and verify that the existing Duo flow is
+    preserved when the session remains locked.
 
-Erwartete Statusfolge beim Button-Ablauf:
+Expected status sequence for the button workflow:
 
-```text
-GNOME sessionMode: unlock-dialog aktiv
-Duo-Zustand: LOCKED
-Duo-Zustand: DUO_PENDING
-Duo-Zustand: DUO_SUCCESS
-Duo-Zustand: UNLOCK_REQUESTED
-GNOME sessionMode: user-Modus aktiv
-Duo-Zustand: UNLOCKED
+``` text
+GNOME sessionMode: unlock-dialog active
+Duo state: LOCKED
+Duo state: DUO_PENDING
+Duo state: DUO_SUCCESS
+Duo state: UNLOCK_REQUESTED
+GNOME sessionMode: user mode active
+Duo state: UNLOCKED
 ```
 
-Jeder Zustandswechsel soll im Agent-Log nur einmal erscheinen. Je nach Timing
-kann `GNOME sessionMode: user-Modus aktiv` unmittelbar vor oder nach der letzten
-Statusmeldung erscheinen.
+Each state change should appear only once in the agent log. Depending on
+timing, `GNOME sessionMode: user mode active` may appear immediately
+before or after the final status notification.
 
-## Sicherheits- und Betriebsgrenzen
+## Security and operational limitations
 
-- Dies ist eine experimentelle Entsperrhilfe für eine bereits angemeldete,
-  gesperrte Benutzersitzung – kein PAM-Modul und kein Ersatz für die Anmeldung
-  beim Systemstart oder den Login-Bildschirm von GDM.
-- Der Agent läuft als Benutzerprozess im angemeldeten Benutzerkontext. Der
-  Session-D-Bus ist kein systemweiter privilegierter Authentifizierungsbroker.
-  Vor einem produktiven Einsatz ist eine weitergehende Sicherheitsprüfung nötig.
-- Der GNOME-Button wird in private GNOME-Shell-Oberflächen (`Main.screenShield`
-  und deren Dialog-/Clock-Widgets) eingefügt. GNOME-Updates können diese internen
-  Schnittstellen ändern.
-- Bei Netzwerk-/DNS-Ausfällen kann der Duo-Ablauf verzögert starten oder
-  fehlschlagen. Bei Fehlern darf die Sitzung nicht durch den Duo-Ablauf freigegeben
-  werden; die reguläre GNOME-Entsperrmöglichkeit bleibt bestehen.
-- Zugangsdaten und persönliche Serverwerte gehören nicht in Quellcode, README,
-  Logs oder öffentliche Projektarchive.
+-   This is an experimental unlock helper for an already logged-in,
+    locked user session. It is not a PAM module and is not a replacement
+    for authentication during system startup or at the GDM login screen.
+-   The agent runs as a user process in the logged-in user's context.
+    The session D-Bus is not a system-wide privileged authentication
+    broker. A further security review is required before production use.
+-   The GNOME button is inserted into private GNOME Shell interfaces
+    (`Main.screenShield` and its dialog/clock widgets). GNOME updates
+    may change these internal interfaces.
+-   Network or DNS outages may delay or prevent the Duo workflow. On
+    failure, the Duo workflow must not unlock the session; the regular
+    GNOME unlock method remains available.
+-   Credentials and personal server values must not be placed in source
+    code, the README, logs, or public project archives.
 
-## Rückbau
+## Uninstallation / rollback
 
-GNOME-Erweiterung deaktivieren:
+Disable the GNOME extension:
 
-```bash
+``` bash
 gnome-extensions disable proxilens-input@local
 ```
 
-Benutzer-Agent stoppen und deaktivieren:
+Stop and disable the user agent:
 
-```bash
+``` bash
 systemctl --user disable --now proxilens-wake-agent.service
 ```
 
-PAM und GDM wurden von dieser Alpha-Version nicht verändert.
+This alpha version does not modify PAM or GDM.
 
-## Weitere Dokumentation
+## Further documentation
 
-- [Alpha.7.3.1 – Duo-Status und Testanleitung](README-ALPHA7.3-DUO-STATE.md)
-- [Alpha.7 – GNOME-Duo-Button](README-ALPHA7-DUO-BUTTON-TEST.md)
-- [Sleep/Wake-Test](README-ALPHA6-TEST.md)
-- [Konfiguration](README-KONFIGURATION.md)
+-   [Alpha.7.3.1 -- Duo status and test
+    guide](README-ALPHA7.3-DUO-STATE.md)
+-   [Alpha.7 -- GNOME Duo button](README-ALPHA7-DUO-BUTTON-TEST.md)
+-   [Sleep/Wake test](README-ALPHA6-TEST.md)
+-   [Configuration](README-KONFIGURATION.md)
