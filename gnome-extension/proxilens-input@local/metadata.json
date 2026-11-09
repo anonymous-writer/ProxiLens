@@ -1,7 +1,8 @@
 {
   "uuid": "proxilens-input@local",
-  "name": "ProxiLens Lock Input Trigger",
-  "description": "Signals the first input event while the GNOME screen is locked to the ProxiLens user agent. Does not record keys or pointer coordinates.",
+  "name": "ProxiLens Duo Unlock Button",
+  "description": "Adds a button to the GNOME unlock dialog to request a Duo push through the ProxiLens user agent.",
   "shell-version": ["50"],
-  "version": 1
+  "session-modes": ["user", "unlock-dialog"],
+  "version": 3
 }

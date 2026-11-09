@@ -1,54 +1,85 @@
-import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
+import St from 'gi://St';
+import Clutter from 'gi://Clutter';
 import {Extension} from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 
 const OBJECT_PATH = '/org/proxilens/Agent';
 const INTERFACE = 'org.proxilens.Agent';
+const SIGNAL = 'DuoUnlockRequested';
 
-export default class ProxiLensInputTrigger extends Extension {
+export default class ProxiLensLockButton extends Extension {
     enable() {
-        this._sentForCurrentLock = false;
-        this._eventId = global.stage.connect('captured-event', (_stage, event) => {
-            if (!Main.screenShield.locked) {
-                this._sentForCurrentLock = false;
-                return Clutter.EVENT_PROPAGATE;
-            }
+        this._sessionModeId = Main.sessionMode.connect('updated', () => this._sync());
+        this._sync();
+    }
 
-            if (this._sentForCurrentLock)
-                return Clutter.EVENT_PROPAGATE;
+    _sync() {
+        const inUnlockDialog = Main.sessionMode.currentMode === 'unlock-dialog';
+        if (inUnlockDialog) {
+            this._addButton();
+        } else {
+            this._removeButton();
+        }
+    }
 
-            const type = event.type();
-            const isUserInput = type === Clutter.EventType.KEY_PRESS ||
-                type === Clutter.EventType.BUTTON_PRESS ||
-                type === Clutter.EventType.MOTION ||
-                type === Clutter.EventType.TOUCH_BEGIN;
+    _addButton() {
+        const dialog = Main.screenShield?._dialog;
+        const clock = dialog?._clock;
+        if (!clock || this._button)
+            return;
 
-            if (!isUserInput)
-                return Clutter.EVENT_PROPAGATE;
-
-            // Send only the event category. Never inspect key values or pointer coordinates.
-            try {
-                Gio.DBus.session.emit_signal(
-                    null,
-                    OBJECT_PATH,
-                    INTERFACE,
-                    'UnlockRequested',
-                    null
-                );
-                this._sentForCurrentLock = true;
-            } catch (error) {
-                console.error(`ProxiLens: could not notify agent: ${error}`);
-            }
-            return Clutter.EVENT_PROPAGATE;
+        this._button = new St.Button({
+            label: 'Mit Duo entsperren',
+            style_class: 'button suggested-action proxilens-duo-unlock',
+            can_focus: true,
+            reactive: true,
+            track_hover: true,
+            x_align: Clutter.ActorAlign.CENTER,
+            y_align: Clutter.ActorAlign.CENTER,
         });
+        this._button.connect('clicked', () => this._requestDuoUnlock());
+        if (clock._date)
+            clock.insert_child_above(this._button, clock._date);
+        else
+            clock.add_child(this._button);
+        this._clock = clock;
+    }
+
+    _requestDuoUnlock() {
+        if (!this._button || this._requestPending)
+            return;
+        this._requestPending = true;
+        this._button.reactive = false;
+        try {
+            Gio.DBus.session.emit_signal(
+                null,
+                OBJECT_PATH,
+                INTERFACE,
+                SIGNAL,
+                null
+            );
+        } catch (error) {
+            console.error(`ProxiLens: Duo-Anfrage konnte nicht gesendet werden: ${error}`);
+            this._button.reactive = true;
+            this._requestPending = false;
+        }
+    }
+
+    _removeButton() {
+        if (this._button) {
+            this._button.destroy();
+            this._button = null;
+        }
+        this._clock = null;
+        this._requestPending = false;
     }
 
     disable() {
-        if (this._eventId) {
-            global.stage.disconnect(this._eventId);
-            this._eventId = 0;
+        if (this._sessionModeId) {
+            Main.sessionMode.disconnect(this._sessionModeId);
+            this._sessionModeId = 0;
         }
-        this._sentForCurrentLock = false;
+        this._removeButton();
     }
 }

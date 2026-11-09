@@ -26,5 +26,5 @@ gnome-extensions enable "$UUID" || {
   exit 1
 }
 
-echo "ProxiLens GNOME-Eingabeerweiterung installiert und aktiviert."
+echo "ProxiLens Duo-Button-Erweiterung installiert und aktiviert."
 echo "Unter Wayland kann eine Ab- und Anmeldung erforderlich sein."

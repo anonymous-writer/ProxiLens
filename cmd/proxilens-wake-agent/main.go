@@ -33,6 +33,7 @@ func main() {
 	log.Println("ProxiLens experimental agent started; watching logind resume and LockedHint")
 	c := &coordinator{}
 	go c.watchLockedHint()
+	go c.watchDuoButton()
 	c.watchLogind()
 }
 
@@ -117,7 +118,60 @@ func (c *coordinator) watchLogind() {
 	}
 }
 
-// triggerResume is the only authentication trigger in this version. A normal
+// watchDuoButton listens on the user's session bus for an explicit click on
+// the GNOME unlock-dialog button. It never reacts to ordinary lock/unlock.
+func (c *coordinator) watchDuoButton() {
+	for {
+		cmd := exec.Command("dbus-monitor", "--session", "type='signal',path='/org/proxilens/Agent',interface='org.proxilens.Agent',member='DuoUnlockRequested'")
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			log.Printf("Duo-Button-Monitor stdout: %v", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		if err = cmd.Start(); err != nil {
+			log.Printf("Duo-Button-Monitor Start: %v", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			if strings.Contains(scanner.Text(), "member=DuoUnlockRequested") || strings.Contains(scanner.Text(), "member=\"DuoUnlockRequested\"") {
+				go c.triggerButtonUnlock()
+			}
+		}
+		_ = cmd.Wait()
+		if err := scanner.Err(); err != nil {
+			log.Printf("Duo-Button-Monitor read: %v", err)
+		}
+		log.Println("Duo-Button-Monitor beendet; erneuter Verbindungsversuch")
+		time.Sleep(3 * time.Second)
+	}
+}
+
+func (c *coordinator) triggerButtonUnlock() {
+	c.mu.Lock()
+	if c.running {
+		c.mu.Unlock()
+		log.Println("Duo-Button-Klick ignoriert: Authentifizierung läuft bereits")
+		return
+	}
+	c.running = true
+	c.mu.Unlock()
+	go func() {
+		defer func() {
+			c.mu.Lock()
+			c.running = false
+			c.mu.Unlock()
+		}()
+		log.Println("Duo-Button auf dem GNOME-Sperrbildschirm betätigt")
+		if err := authenticateAndUnlock(); err != nil {
+			log.Printf("Duo-Entsperrung über Sperrbildschirm-Button fehlgeschlagen: %v", err)
+		}
+	}()
+}
+
+// triggerResume is the Sleep/Wake authentication trigger in this version. A normal
 // Super+L lock never starts Duo. authenticateAndUnlock independently verifies
 // LockedHint before contacting Authelia and again before unlocking.
 func (c *coordinator) triggerResume() {

@@ -1,5 +1,5 @@
 [Unit]
-Description=ProxiLens experimental Duo-after-sleep agent
+Description=ProxiLens experimental Sleep/Wake and GNOME Duo-button agent
 After=graphical-session.target
 PartOf=graphical-session.target
 

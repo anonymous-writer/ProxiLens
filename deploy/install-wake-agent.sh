@@ -14,6 +14,6 @@ systemctl --user enable --now proxilens-wake-agent.service
 if command -v gnome-extensions >/dev/null 2>&1; then
   gnome-extensions disable proxilens-input@local >/dev/null 2>&1 || true
 fi
-echo "Wake-Agent mit direkter GNOME-Sperrbildschirm-Erkennung installiert."
+echo "Wake-Agent mit Sleep/Wake- und Duo-Button-Signalüberwachung installiert."
 echo "Status: systemctl --user status proxilens-wake-agent"
 echo "Log: journalctl --user -u proxilens-wake-agent -f"

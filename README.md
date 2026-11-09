@@ -110,3 +110,8 @@ gesperrt ist. PAM und GDM werden nicht verändert. Details und Testplan:
 [README-ALPHA6-TEST.md](README-ALPHA6-TEST.md).
 
 Die Alpha.6 ist experimentell und muss auf dem Zielgerät getestet werden.
+
+
+## Experimenteller GNOME-Duo-Button
+
+Siehe [Alpha.7-Testanleitung](README-ALPHA7-DUO-BUTTON-TEST.md).
