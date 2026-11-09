@@ -23,7 +23,7 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v7
 
-      - name: Install Linux and Fyne dependencies
+      - name: Install Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -59,20 +59,18 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
-      - name: Check UI package
-        run: |
-          echo "Available Go packages:"
-          go list ./...
-
-          echo "Checking expected UI package:"
-          if [ ! -d "./cmd/proxilens-ui" ]; then
-            echo "::error::Directory ./cmd/proxilens-ui does not exist."
-            echo "Please update the build target to the actual UI package."
-            exit 1
-          fi
-
-      - name: Build dashboard
+      - name: Build Wake Agent
         run: |
           mkdir -p dist
-          go build -trimpath -o dist/proxilens-ui ./cmd/proxilens-ui
+          go build \
+            -trimpath \
+            -o dist/proxilens-wake-agent \
+            ./cmd/proxilens-wake-agent
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxilens-wake-agent-linux-amd64
+          path: dist/proxilens-wake-agent
+          if-no-files-found: error
 

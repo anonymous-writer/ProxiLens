@@ -19,7 +19,7 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - name: Install Linux and Fyne dependencies
+      - name: Install Linux dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -41,19 +41,10 @@ jobs:
       - name: Resolve dependencies
         run: go mod download
 
-      - name: Check UI package
-        run: |
-          echo "Available Go packages:"
-          go list ./...
+      - name: Run tests
+        run: go test ./...
 
-          echo "Checking expected UI package:"
-          if [ ! -d "./cmd/proxilens-ui" ]; then
-            echo "::error::Directory ./cmd/proxilens-ui does not exist."
-            echo "Please update the build target to the actual UI package."
-            exit 1
-          fi
-
-      - name: Build binaries
+      - name: Build release
         env:
           VERSION: ${{ github.event.release.tag_name }}
         run: |
@@ -64,10 +55,14 @@ jobs:
           go build \
             -trimpath \
             -ldflags="-s -w" \
-            -o dist/proxilens/proxilens-ui \
-            ./cmd/proxilens-ui
+            -o dist/proxilens/proxilens-wake-agent \
+            ./cmd/proxilens-wake-agent
 
           cp README.md dist/proxilens/
+
+          if [ -f LICENSE ]; then
+            cp LICENSE dist/proxilens/
+          fi
 
           printf '%s\n' "$VERSION" > dist/proxilens/VERSION
 
