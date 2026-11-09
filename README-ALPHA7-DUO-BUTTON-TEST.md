@@ -2,9 +2,13 @@
 
 ## Ziel
 
-Diese Testversion ergänzt den GNOME-Entsperrdialog um „Mit Duo entsperren“. Der Button sendet ausschließlich ein D-Bus-Signal an den ProxiLens-Benutzer-Agenten. Der Agent prüft `LockedHint`, führt die vorhandene Authelia-/Duo-Authentifizierung aus und versucht danach – wie bei der bereits funktionierenden Sleep-Funktion – die aktive Wayland-Sitzung zu entsperren.
+Diese Testversion ergänzt den GNOME-Entsperrdialog um „Mit Duo entsperren“. Der Button sendet ausschließlich ein D-Bus-Signal an den ProxiLens-Benutzer-Agenten. Die Erweiterung meldet zusätzlich den Wechsel des GNOME-Session-Modus (`unlock-dialog`/`user`) über das Session-D-Bus an den Agenten. Der Agent protokolliert diesen Zustand und verlangt ihn als zusätzliche Vorbedingung für einen Button-Klick. Vor der Authentifizierung und unmittelbar vor dem Entsperrversuch prüft er weiterhin `LockedHint`; die GNOME-Meldung ersetzt keine Authentifizierung und ist allein keine Freigabe.
 
 Die normale Ubuntu-Passwortentsperrung bleibt verfügbar. PAM/GDM werden nicht verändert. Sleep/Wake bleibt als separater Auslöser erhalten.
+
+## GNOME-Sperrstatus-Indikator
+
+Beim Wechsel in `unlock-dialog` sendet die Erweiterung `LockStateChanged(true)`, beim Verlassen `LockStateChanged(false)`. Der Agent protokolliert diese Zustandswechsel. Das ist ein zusätzlicher Statusindikator; `loginctl LockedHint` bleibt die maßgebliche Sicherheitsprüfung.
 
 ## Installation
 
@@ -25,7 +29,7 @@ systemctl --user status proxilens-wake-agent.service
 journalctl --user -u proxilens-wake-agent.service -f
 ```
 
-5. `Super+L` drücken. Im Sperrbildschirm sollte „Mit Duo entsperren“ erscheinen. Erst nach Klick darf die Duo-Anfrage starten.
+5. `Super+L` drücken. Im Sperrbildschirm sollte „Mit Duo entsperren“ erscheinen. Im Agent-Log sollte außerdem `GNOME sessionMode: unlock-dialog aktiv` stehen. Nach dem Entsperren sollte `GNOME sessionMode: user-Modus aktiv` erscheinen. Erst nach Klick darf die Duo-Anfrage starten.
 
 ## Erwartetes Verhalten
 

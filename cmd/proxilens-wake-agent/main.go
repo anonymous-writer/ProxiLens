@@ -19,13 +19,21 @@ import (
 	"github.com/local/proxilens/internal/session"
 )
 
+const (
+	proxilensObjectPath = "/org/proxilens/Agent"
+	proxilensInterface  = "org.proxilens.Agent"
+)
+
 type coordinator struct {
-	mu        sync.Mutex
-	sessionID string
-	locked    bool
-	known     bool
-	triggered bool // one resume authentication attempt per lock cycle
-	running   bool
+	mu          sync.Mutex
+	sessionID   string
+	locked      bool
+	known       bool
+	triggered   bool // one resume authentication attempt per lock cycle
+	gnomeLocked bool
+	gnomeKnown  bool
+	running     bool
+	duoState    string
 }
 
 func main() {
@@ -34,6 +42,7 @@ func main() {
 	c := &coordinator{}
 	go c.watchLockedHint()
 	go c.watchDuoButton()
+	go c.watchGNOMELockState()
 	c.watchLogind()
 }
 
@@ -118,6 +127,53 @@ func (c *coordinator) watchLogind() {
 	}
 }
 
+// watchGNOMELockState listens for lock-dialog mode changes reported by the
+// GNOME extension. This is an additional state indicator, not an authenticator.
+func (c *coordinator) watchGNOMELockState() {
+	for {
+		cmd := exec.Command("dbus-monitor", "--session", "type='signal',path='/org/proxilens/Agent',interface='org.proxilens.Agent',member='LockStateChanged'")
+		stdout, err := cmd.StdoutPipe()
+		if err != nil {
+			log.Printf("GNOME-Sperrstatus-Monitor stdout: %v", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		if err = cmd.Start(); err != nil {
+			log.Printf("GNOME-Sperrstatus-Monitor Start: %v", err)
+			time.Sleep(3 * time.Second)
+			continue
+		}
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line != "boolean true" && line != "boolean false" {
+				continue
+			}
+			locked := line == "boolean true"
+			c.mu.Lock()
+			changed := !c.gnomeKnown || c.gnomeLocked != locked
+			c.gnomeLocked = locked
+			c.gnomeKnown = true
+			c.mu.Unlock()
+			if changed {
+				if locked {
+					log.Println("GNOME sessionMode: unlock-dialog aktiv (Sperrbildschirm erkannt)")
+					c.setDuoState("locked")
+				} else {
+					log.Println("GNOME sessionMode: user-Modus aktiv (Sperrbildschirm verlassen)")
+					c.setDuoState("unlocked")
+				}
+			}
+		}
+		_ = cmd.Wait()
+		if err := scanner.Err(); err != nil {
+			log.Printf("GNOME-Sperrstatus-Monitor read: %v", err)
+		}
+		log.Println("GNOME-Sperrstatus-Monitor beendet; erneuter Verbindungsversuch")
+		time.Sleep(3 * time.Second)
+	}
+}
+
 // watchDuoButton listens on the user's session bus for an explicit click on
 // the GNOME unlock-dialog button. It never reacts to ordinary lock/unlock.
 func (c *coordinator) watchDuoButton() {
@@ -151,6 +207,11 @@ func (c *coordinator) watchDuoButton() {
 
 func (c *coordinator) triggerButtonUnlock() {
 	c.mu.Lock()
+	if !c.gnomeKnown || !c.gnomeLocked {
+		c.mu.Unlock()
+		log.Println("Duo-Button-Klick ignoriert: GNOME meldet keinen aktiven Sperrbildschirm")
+		return
+	}
 	if c.running {
 		c.mu.Unlock()
 		log.Println("Duo-Button-Klick ignoriert: Authentifizierung läuft bereits")
@@ -165,9 +226,14 @@ func (c *coordinator) triggerButtonUnlock() {
 			c.mu.Unlock()
 		}()
 		log.Println("Duo-Button auf dem GNOME-Sperrbildschirm betätigt")
-		if err := authenticateAndUnlock(); err != nil {
+		c.setDuoState("pending")
+		if err := authenticateAndUnlock(func(msg string) { log.Printf("Authentifizierung: %s", msg) }, c.setDuoState); err != nil {
+			c.setDuoState("failed")
 			log.Printf("Duo-Entsperrung über Sperrbildschirm-Button fehlgeschlagen: %v", err)
+			return
 		}
+		// UNLOCKED is reported only after GNOME actually leaves unlock-dialog.
+		// This avoids an optimistic and duplicate completion message here.
 	}()
 }
 
@@ -191,13 +257,15 @@ func (c *coordinator) triggerResume() {
 			c.mu.Unlock()
 		}()
 		log.Println("Sleep/Wake erkannt; prüfe, ob die Sitzung weiterhin gesperrt ist")
-		if err := authenticateAndUnlock(); err != nil {
+		c.setDuoState("pending")
+		if err := authenticateAndUnlock(func(msg string) { log.Printf("Authentifizierung: %s", msg) }, c.setDuoState); err != nil {
+			c.setDuoState("failed")
 			log.Printf("Duo nach Sleep/Wake nicht abgeschlossen: %v", err)
 		}
 	}()
 }
 
-func authenticateAndUnlock() error {
+func authenticateAndUnlock(progress func(string), setState func(string)) error {
 	// Confirm that this is still the active, locked Wayland user session.
 	s, err := session.Current()
 	if err != nil {
@@ -228,9 +296,10 @@ func authenticateAndUnlock() error {
 	if err := waitForAutheliaNetwork(ctx, cfg.AutheliaURL); err != nil {
 		return err
 	}
-	if err := authelia.AuthenticateDuo(ctx, cfg.AutheliaURL, cfg.Username, cfg.Password, func(msg string) { log.Printf("Authentifizierung: %s", msg) }); err != nil {
+	if err := authelia.AuthenticateDuo(ctx, cfg.AutheliaURL, cfg.Username, cfg.Password, progress); err != nil {
 		return err
 	}
+	setState("success")
 	// Re-check the exact session state immediately before unlocking.
 	current, err := session.Current()
 	if err != nil {
@@ -239,7 +308,44 @@ func authenticateAndUnlock() error {
 	if current.ID != s.ID || !current.Locked {
 		return fmtError("Sitzung hat sich während der Duo-Prüfung geändert; keine Entsperrung")
 	}
-	return session.UnlockCurrent()
+	setState("unlock-requested")
+	if err := session.UnlockCurrent(); err != nil {
+		return err
+	}
+	return nil
+}
+
+// setDuoState emits and logs only actual state transitions. The GNOME mode
+// watcher and the authentication flow can observe the same transition nearly
+// simultaneously; central deduplication keeps the journal and button updates
+// from reporting it twice.
+func (c *coordinator) setDuoState(state string) {
+	c.mu.Lock()
+	if c.duoState == state {
+		c.mu.Unlock()
+		return
+	}
+	c.duoState = state
+	c.mu.Unlock()
+
+	cmd := exec.Command("gdbus", "emit", "--session", "--object-path", proxilensObjectPath,
+		"--signal", proxilensInterface+".DuoAuthStateChanged", state)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Printf("Duo-Status konnte GNOME nicht gemeldet werden (%s): %v %s", state, err, strings.TrimSpace(string(out)))
+		return
+	}
+	label := map[string]string{
+		"locked":           "LOCKED",
+		"pending":          "DUO_PENDING",
+		"success":          "DUO_SUCCESS",
+		"unlock-requested": "UNLOCK_REQUESTED",
+		"unlocked":         "UNLOCKED",
+		"failed":           "FAILED",
+	}[state]
+	if label == "" {
+		label = strings.ToUpper(strings.ReplaceAll(state, "-", "_"))
+	}
+	log.Printf("Duo-Zustand: %s", label)
 }
 
 type simpleError string

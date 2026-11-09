@@ -2,7 +2,12 @@
   "uuid": "proxilens-input@local",
   "name": "ProxiLens Duo Unlock Button",
   "description": "Adds a button to the GNOME unlock dialog to request a Duo push through the ProxiLens user agent.",
-  "shell-version": ["50"],
-  "session-modes": ["user", "unlock-dialog"],
-  "version": 3
+  "shell-version": [
+    "50"
+  ],
+  "session-modes": [
+    "user",
+    "unlock-dialog"
+  ],
+  "version": 6
 }
