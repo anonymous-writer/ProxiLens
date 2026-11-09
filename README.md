@@ -174,3 +174,11 @@ This alpha version does not modify PAM or GDM.
 -   [Alpha.7 -- GNOME Duo button](README-ALPHA7-DUO-BUTTON-TEST.md)
 -   [Sleep/Wake test](README-ALPHA6-TEST.md)
 -   [Configuration](README-KONFIGURATION.md)
+
+## License
+
+ProxiLens is licensed under the MIT License.
+
+Copyright (c) 2026 Michael Wlotkowski
+
+See the [LICENSE](LICENSE) file for the full license text.
