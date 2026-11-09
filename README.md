@@ -93,3 +93,8 @@ keine PAM-, GDM- oder GNOME-Konfiguration.
 ## Version 0.5.4
 
 Während eines laufenden Device-Flows verbirgt die Fensterschaltfläche X nur das Fenster. Die Autorisierung läuft weiter; nach ihrem Abschluss wird das Fenster wieder eingeblendet. Die Desktop-Entsperrung bleibt deaktiviert.
+
+
+## Experimenteller Wake-Agent (Alpha.2)
+
+Ein optionaler systemd-Benutzerdienst für Duo Push nach dem Aufwachen aus dem Energiesparmodus ist enthalten. Installation und Einschränkungen: [README-WAKE-AGENT.md](README-WAKE-AGENT.md). Die Erkennung der ersten Eingabe am GNOME-Wayland-Sperrbildschirm ist noch nicht enthalten.
