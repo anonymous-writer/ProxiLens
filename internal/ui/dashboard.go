@@ -160,16 +160,31 @@ func Run() error {
 	}
 	refreshInstallStatus = func() {
 		go func() {
-			gnomeState := commandOutput("gnome-extensions", "info", "proxilens-input@local")
-			gnomeInstalled := strings.Contains(gnomeState, "State: ENABLED") || strings.Contains(gnomeState, "State: ACTIVE")
+			const extensionUUID = "proxilens-input@local"
+			extensionDir := filepath.Join(os.Getenv("HOME"), ".local", "share", "gnome-shell", "extensions", extensionUUID)
+			_, metadataErr := os.Stat(filepath.Join(extensionDir, "metadata.json"))
+			gnomeInstalled := metadataErr == nil
+			enabledOutput := commandOutput("gnome-extensions", "list", "--enabled")
+			gnomeEnabled := false
+			for _, id := range strings.Split(enabledOutput, "\\n") {
+				if strings.TrimSpace(id) == extensionUUID {
+					gnomeEnabled = true
+					break
+				}
+			}
 			serviceState := commandOutput("systemctl", "--user", "is-active", "proxilens-wake-agent.service")
 			serviceInstalled := strings.TrimSpace(serviceState) == "active"
 			fyne.Do(func() {
-				if gnomeInstalled {
+				if gnomeInstalled && gnomeEnabled {
 					gnomeInstallStatus.SetText("Installiert und aktiviert")
 					gnomeInstallButton.Disable()
+				} else if gnomeInstalled {
+					gnomeInstallStatus.SetText("Installiert, aber nicht aktiviert")
+					gnomeInstallButton.SetText("GNOME-Erweiterung aktivieren")
+					gnomeInstallButton.Enable()
 				} else {
-					gnomeInstallStatus.SetText("Nicht installiert oder nicht aktiviert")
+					gnomeInstallStatus.SetText("Nicht installiert")
+					gnomeInstallButton.SetText("GNOME-Erweiterung installieren")
 					gnomeInstallButton.Enable()
 				}
 				if serviceInstalled {
