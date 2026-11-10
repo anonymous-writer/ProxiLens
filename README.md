@@ -20,6 +20,15 @@ screen. The current test version is designed for Ubuntu with GNOME Shell
 
 ![ProxiLens web interface](https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/screenshot1.png)
 
+## Linux-Architekturen
+
+GitHub Actions baut ProxiLens für beide Linux-Architekturen:
+
+- `linux/amd64` für Intel-/AMD-PCs
+- `linux/arm64` für Raspberry Pi und andere ARM64-Systeme
+
+Bei veröffentlichten GitHub-Releases werden für beide Architekturen jeweils ein `.tar.gz`-Archiv und eine `.sha256`-Prüfsummendatei angehängt. Die CI stellt außerdem getrennte Build-Artefakte `proxilens-linux-amd64` und `proxilens-linux-arm64` bereit.
+
 ## Desktop settings window
 
 ProxiLens includes a Fyne-based desktop window with the project logo,

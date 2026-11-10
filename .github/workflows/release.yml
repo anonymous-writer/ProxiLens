@@ -9,9 +9,17 @@ permissions:
   contents: write
 
 jobs:
-  linux-amd64:
-    name: Build Linux amd64 release
-    runs-on: ubuntu-24.04
+  linux:
+    name: Build Linux ${{ matrix.arch }} release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Check out release tag
@@ -63,12 +71,12 @@ jobs:
 
           printf '%s\n' "$VERSION" > dist/proxilens/VERSION
 
-          tar -czf "dist/ProxiLens-${VERSION}-linux-amd64.tar.gz" \
+          tar -czf "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.tar.gz" \
             -C dist proxilens
 
           sha256sum \
-            "dist/ProxiLens-${VERSION}-linux-amd64.tar.gz" \
-            > "dist/ProxiLens-${VERSION}-linux-amd64.tar.gz.sha256"
+            "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.tar.gz" \
+            > "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.tar.gz.sha256"
 
       - name: Upload release assets
         env:
@@ -78,7 +86,7 @@ jobs:
           set -euo pipefail
 
           gh release upload "$TAG" \
-            "dist/ProxiLens-${TAG}-linux-amd64.tar.gz" \
-            "dist/ProxiLens-${TAG}-linux-amd64.tar.gz.sha256" \
+            "dist/ProxiLens-${TAG}-linux-${{ matrix.arch }}.tar.gz" \
+            "dist/ProxiLens-${TAG}-linux-${{ matrix.arch }}.tar.gz.sha256" \
             --clobber
 
