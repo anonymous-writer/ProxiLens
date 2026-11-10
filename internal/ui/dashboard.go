@@ -39,6 +39,10 @@ func Run() error {
 	a := app.NewWithID("de.local.proxilens")
 	a.Settings().SetTheme(theme.DarkTheme())
 	w := a.NewWindow("ProxiLens")
+	lang := a.Preferences().StringWithFallback("language", "de")
+	if lang != "de" && lang != "en" && lang != "es" {
+		lang = "de"
+	}
 	w.Resize(fyne.NewSize(760, 620))
 	w.SetMaster()
 
@@ -79,6 +83,18 @@ func Run() error {
 	title.TextStyle.Bold = true
 	subtitle := widget.NewLabel("Session Monitor · Authelia & Duo")
 	header := container.NewHBox(logoImage, container.NewVBox(title, subtitle))
+	var applyLanguage func(string)
+	languageSelect := widget.NewSelect([]string{"🇩🇪 Deutsch", "🇬🇧 English", "🇪🇸 Español"}, func(choice string) {
+		selected := map[string]string{"🇩🇪 Deutsch": "de", "🇬🇧 English": "en", "🇪🇸 Español": "es"}[choice]
+		if selected != "" {
+			lang = selected
+			a.Preferences().SetString("language", lang)
+			if applyLanguage != nil {
+				applyLanguage(lang)
+			}
+		}
+	})
+	languageSelect.SetSelected(map[string]string{"de": "🇩🇪 Deutsch", "en": "🇬🇧 English", "es": "🇪🇸 Español"}[lang])
 
 	sessionValue := widget.NewLabel("Wird ermittelt …")
 	authValue := widget.NewLabel("Noch nicht geprüft")
@@ -203,7 +219,8 @@ func Run() error {
 		widget.NewSeparator(), serviceInstallButton, serviceInstallStatus,
 	))
 	topRight := widget.NewLabel("Ubuntu · GNOME Wayland")
-	headerRow := container.NewBorder(nil, nil, nil, topRight, header)
+	headerRight := container.NewHBox(languageSelect, topRight)
+	headerRow := container.NewBorder(nil, nil, nil, headerRight, header)
 	githubStatus := widget.NewLabel("GitHub-Status wird geladen …")
 	repoURL, _ := url.Parse("https://github.com/anonymous-writer/ProxiLens")
 	releasesURL, _ := url.Parse("https://github.com/anonymous-writer/ProxiLens/releases")
@@ -219,6 +236,33 @@ func Run() error {
 		container.NewHBox(layout.NewSpacer(), widget.NewLabel("ProxiLens"), widget.NewLabel("·"), versionValue, widget.NewLabel("· Status: aktiv")),
 		container.NewHBox(layout.NewSpacer(), githubStatus, githubLinks),
 	)
+	applyLanguage = func(language string) {
+		translations := map[string]map[string]string{
+			"de": {"subtitle": "Session Monitor · Authelia & Duo", "statusTitle": "Systemstatus", "statusSubtitle": "Aktueller Zustand von ProxiLens", "settingsTitle": "Verbindungseinstellungen", "settingsSubtitle": "Zugangsdaten werden verschlüsselt gespeichert", "save": "Einstellungen speichern", "check": "Verbindung prüfen", "setupTitle": "Einrichtung", "setupSubtitle": "Einmalige Installation der GNOME-Erweiterung und des Hintergrunddienstes", "gnomeInstall": "GNOME-Erweiterung installieren", "serviceInstall": "Hintergrunddienst installieren", "server": "Authelia-Server", "username": "Authelia-Benutzername", "password": "Passwort", "database": "Datenbankdatei", "topRight": "Ubuntu · GNOME Wayland"},
+			"en": {"subtitle": "Session Monitor · Authelia & Duo", "statusTitle": "System status", "statusSubtitle": "Current ProxiLens status", "settingsTitle": "Connection settings", "settingsSubtitle": "Credentials are stored encrypted", "save": "Save settings", "check": "Check connection", "setupTitle": "Setup", "setupSubtitle": "One-time installation of the GNOME extension and background service", "gnomeInstall": "Install GNOME extension", "serviceInstall": "Install background service", "server": "Authelia server", "username": "Authelia username", "password": "Password", "database": "Database file", "topRight": "Ubuntu · GNOME Wayland"},
+			"es": {"subtitle": "Monitor de sesión · Authelia y Duo", "statusTitle": "Estado del sistema", "statusSubtitle": "Estado actual de ProxiLens", "settingsTitle": "Configuración de conexión", "settingsSubtitle": "Las credenciales se guardan cifradas", "save": "Guardar configuración", "check": "Comprobar conexión", "setupTitle": "Instalación", "setupSubtitle": "Instalación única de la extensión GNOME y del servicio en segundo plano", "gnomeInstall": "Instalar extensión GNOME", "serviceInstall": "Instalar servicio en segundo plano", "server": "Servidor Authelia", "username": "Usuario de Authelia", "password": "Contraseña", "database": "Archivo de base de datos", "topRight": "Ubuntu · GNOME Wayland"},
+		}
+		t := translations[language]
+		subtitle.SetText(t["subtitle"])
+		statusCard.Title, statusCard.Subtitle = t["statusTitle"], t["statusSubtitle"]
+		settingsCard.Title, settingsCard.Subtitle = t["settingsTitle"], t["settingsSubtitle"]
+		setupCard.Title, setupCard.Subtitle = t["setupTitle"], t["setupSubtitle"]
+		saveButton.SetText(t["save"])
+		checkButton.SetText(t["check"])
+		gnomeInstallButton.SetText(t["gnomeInstall"])
+		serviceInstallButton.SetText(t["serviceInstall"])
+		urlEntry.SetPlaceHolder("https://auth.example.com")
+		userEntry.SetPlaceHolder(t["username"])
+		passEntry.SetPlaceHolder(map[string]string{"de": "Leer lassen, um das gespeicherte Passwort beizubehalten", "en": "Leave empty to keep the saved password", "es": "Déjelo vacío para conservar la contraseña guardada"}[language])
+		_ = t["server"]
+		_ = t["password"]
+		_ = t["database"]
+		widget.Refresh(statusCard)
+		widget.Refresh(settingsCard)
+		widget.Refresh(setupCard)
+		widget.Refresh(headerRow)
+	}
+	applyLanguage(lang)
 	content := container.NewBorder(
 		headerRow,
 		footer,
