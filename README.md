@@ -10,6 +10,8 @@ screen. The current test version is designed for Ubuntu with GNOME Shell
 > This is not a general security guarantee for other systems or
 > versions.
 
+![ProxiLens web interface](https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/screenshot1.png)
+
 ## Desktop settings window
 
 ProxiLens includes a Fyne-based desktop window with the project logo,
