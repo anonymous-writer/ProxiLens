@@ -222,3 +222,9 @@ See the [LICENSE](LICENSE) file for the full license text.
 ## GitHub status
 
 The desktop dashboard checks the GitHub repository for the latest published release and the most recent successful GitHub Actions run. The status is refreshed every 10 minutes. Links to the repository, releases, and Actions are available in the application footer. If GitHub cannot be reached, the application continues to work and reports that the online status is unavailable.
+
+## Einmalige Einrichtung über die Oberfläche
+
+Die Desktop-Oberfläche erkennt den Installationsstatus der GNOME-Erweiterung `proxilens-input@local` und des systemd-User-Service `proxilens-wake-agent.service`. Über die beiden Schaltflächen unter **Einrichtung** können die vorhandenen Skripte `deploy/install-gnome-extension.sh` und `deploy/install-wake-agent.sh` gestartet werden. Bereits aktive Komponenten werden als installiert angezeigt.
+
+Die Oberfläche startet dabei keine Hintergrundprozesse selbst: Der Wake-Agent bleibt ein eigenständiger systemd-User-Service und läuft unabhängig davon weiter, ob das Einstellungsfenster geöffnet oder geschlossen ist. Die Installer-Schaltflächen benötigen das entpackte Projektverzeichnis mit dem `deploy/`-Ordner; starte die Entwicklungsfassung daher aus dem Projektverzeichnis.

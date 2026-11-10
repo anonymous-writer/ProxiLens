@@ -10,6 +10,8 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -142,6 +144,48 @@ func Run() error {
 	))
 
 	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() { checkConnection(cfg.AutheliaURL, authValue) })
+
+	// Installationseinrichtung: Die beiden Komponenten laufen unabhängig von diesem Fenster.
+	gnomeInstallStatus := widget.NewLabel("Status wird geprüft …")
+	serviceInstallStatus := widget.NewLabel("Status wird geprüft …")
+	gnomeInstallButton := widget.NewButtonWithIcon("GNOME-Erweiterung installieren", theme.DownloadIcon(), nil)
+	serviceInstallButton := widget.NewButtonWithIcon("Hintergrunddienst installieren", theme.SettingsIcon(), nil)
+	var refreshInstallStatus func()
+	gnomeInstallButton.OnTapped = func() {
+		runInstaller(w, "install-gnome-extension.sh", gnomeInstallStatus, gnomeInstallButton, refreshInstallStatus)
+	}
+	serviceInstallButton.OnTapped = func() {
+		runInstaller(w, "install-wake-agent.sh", serviceInstallStatus, serviceInstallButton, refreshInstallStatus)
+	}
+	refreshInstallStatus = func() {
+		go func() {
+			gnomeState := commandOutput("gnome-extensions", "info", "proxilens-input@local")
+			gnomeInstalled := strings.Contains(gnomeState, "State: ENABLED") || strings.Contains(gnomeState, "State: ACTIVE")
+			serviceState := commandOutput("systemctl", "--user", "is-active", "proxilens-wake-agent.service")
+			serviceInstalled := strings.TrimSpace(serviceState) == "active"
+			fyne.Do(func() {
+				if gnomeInstalled {
+					gnomeInstallStatus.SetText("Installiert und aktiviert")
+					gnomeInstallButton.Disable()
+				} else {
+					gnomeInstallStatus.SetText("Nicht installiert oder nicht aktiviert")
+					gnomeInstallButton.Enable()
+				}
+				if serviceInstalled {
+					serviceInstallStatus.SetText("Aktiv · läuft unabhängig vom Einstellungsfenster")
+					serviceInstallButton.Disable()
+				} else {
+					serviceInstallStatus.SetText("Nicht installiert oder nicht aktiv")
+					serviceInstallButton.Enable()
+				}
+			})
+		}()
+	}
+	refreshInstallStatus()
+	setupCard := widget.NewCard("Einrichtung", "Einmalige Installation der GNOME-Erweiterung und des Hintergrunddienstes", container.NewVBox(
+		gnomeInstallButton, gnomeInstallStatus,
+		widget.NewSeparator(), serviceInstallButton, serviceInstallStatus,
+	))
 	topRight := widget.NewLabel("Ubuntu · GNOME Wayland")
 	headerRow := container.NewBorder(nil, nil, nil, topRight, header)
 	githubStatus := widget.NewLabel("GitHub-Status wird geladen …")
@@ -163,7 +207,7 @@ func Run() error {
 		headerRow,
 		footer,
 		nil, nil,
-		container.NewVScroll(container.NewVBox(statusCard, settingsCard, checkButton)),
+		container.NewVScroll(container.NewVBox(statusCard, setupCard, settingsCard, checkButton)),
 	)
 	w.SetContent(container.NewPadded(content))
 
@@ -283,4 +327,62 @@ func checkConnection(base string, target *widget.Label) {
 			}
 		})
 	}()
+}
+
+func commandOutput(name string, args ...string) string {
+	cmd := exec.Command(name, args...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return string(out)
+	}
+	return string(out)
+}
+
+func runInstaller(w fyne.Window, script string, status *widget.Label, button *widget.Button, refresh func()) {
+	root, err := findProjectRoot()
+	if err != nil {
+		dialog.ShowError(err, w)
+		return
+	}
+	status.SetText("Installation läuft …")
+	button.Disable()
+	go func() {
+		cmd := exec.Command("bash", filepath.Join(root, "deploy", script))
+		cmd.Dir = root
+		out, runErr := cmd.CombinedOutput()
+		fyne.Do(func() {
+			if runErr != nil {
+				status.SetText("Installation fehlgeschlagen")
+				button.Enable()
+				dialog.ShowError(fmt.Errorf("%s\n%s", runErr, strings.TrimSpace(string(out))), w)
+				return
+			}
+			status.SetText("Installation erfolgreich")
+			refresh()
+		})
+	}()
+}
+
+func findProjectRoot() (string, error) {
+	candidates := []string{}
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, cwd)
+	}
+	if exe, err := os.Executable(); err == nil {
+		candidates = append(candidates, filepath.Dir(exe))
+	}
+	for _, candidate := range candidates {
+		for dir := candidate; ; dir = filepath.Dir(dir) {
+			if _, err := os.Stat(filepath.Join(dir, "deploy", "install-gnome-extension.sh")); err == nil {
+				if _, err := os.Stat(filepath.Join(dir, "deploy", "install-wake-agent.sh")); err == nil {
+					return dir, nil
+				}
+			}
+			parent := filepath.Dir(dir)
+			if parent == dir {
+				break
+			}
+		}
+	}
+	return "", fmt.Errorf("Projektverzeichnis nicht gefunden. Bitte ProxiLens aus dem entpackten Projektordner starten.")
 }
