@@ -84,6 +84,7 @@ func Run() error {
 	subtitle := widget.NewLabel("Session Monitor · Authelia & Duo")
 	header := container.NewHBox(logoImage, container.NewVBox(title, subtitle))
 	var applyLanguage func(string)
+	var refreshSession func()
 	languageSelect := widget.NewSelect([]string{"🇩🇪 Deutsch", "🇬🇧 English", "🇪🇸 Español"}, func(choice string) {
 		selected := map[string]string{"🇩🇪 Deutsch": "de", "🇬🇧 English": "en", "🇪🇸 Español": "es"}[choice]
 		if selected != "" {
@@ -99,7 +100,6 @@ func Run() error {
 	sessionValue := widget.NewLabel(translations(lang)["gnomeChecking"])
 	authValue := widget.NewLabel(translations(lang)["checking"])
 	duoValue := widget.NewLabel(translations(lang)["duoReady"])
-	versionValue := widget.NewLabel("v1.0.1 · Beta")
 	sessionName := boldLabel("GNOME session")
 	authName := boldLabel("Authelia")
 	duoName := boldLabel("Duo")
@@ -159,7 +159,7 @@ func Run() error {
 		cfg, dbPath = loaded, newPath
 		a.Preferences().SetString("database_path", dbPath)
 		passEntry.SetText("")
-		saveStatus.SetText("Einstellungen sicher gespeichert.")
+		saveStatus.SetText(translations(lang)["saved"])
 		checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
 	})
 	settingsCard := widget.NewCard("Verbindungseinstellungen", "Zugangsdaten werden verschlüsselt gespeichert", container.NewVBox(
@@ -240,37 +240,11 @@ func Run() error {
 		widget.NewLabel("·"),
 		widget.NewHyperlink("Actions", actionsURL),
 	)
+	// Keep the footer focused on useful GitHub information; the redundant
+	// product/version/status row has been removed.
 	footer := container.NewVBox(
-		container.NewHBox(layout.NewSpacer(), widget.NewLabel("ProxiLens"), widget.NewLabel("·"), versionValue, widget.NewLabel("· "+translations(lang)["footerActive"])),
 		container.NewHBox(layout.NewSpacer(), githubStatus, githubLinks),
 	)
-	refreshInstallLabels := func(language string) {
-		t := translations(language)
-		gnomeText := strings.ToLower(gnomeInstallStatus.Text)
-		switch {
-		case strings.Contains(gnomeText, "nicht aktiviert"), strings.Contains(gnomeText, "not enabled"), strings.Contains(gnomeText, "no activada"):
-			gnomeInstallStatus.SetText(t["gnomeInstalledDisabled"])
-			gnomeInstallButton.SetText(t["gnomeEnable"])
-			gnomeInstallButton.Enable()
-		case strings.Contains(gnomeText, "installiert und aktiviert"), strings.Contains(gnomeText, "installed and enabled"), strings.Contains(gnomeText, "instalada y activada"):
-			gnomeInstallStatus.SetText(t["gnomeEnabled"])
-			gnomeInstallButton.SetText(t["gnomeInstall"])
-			gnomeInstallButton.Disable()
-		case strings.Contains(gnomeText, "nicht installiert"), strings.Contains(gnomeText, "not installed"), strings.Contains(gnomeText, "no instalada"):
-			gnomeInstallStatus.SetText(t["notInstalled"])
-			gnomeInstallButton.SetText(t["gnomeInstall"])
-			gnomeInstallButton.Enable()
-		}
-		serviceText := strings.ToLower(serviceInstallStatus.Text)
-		if strings.Contains(serviceText, "aktiv ·") || strings.Contains(serviceText, "active ·") || strings.Contains(serviceText, "activa ·") {
-			serviceInstallStatus.SetText(t["serviceActive"])
-			serviceInstallButton.Disable()
-		} else if strings.Contains(serviceText, "nicht installiert") || strings.Contains(serviceText, "not installed") || strings.Contains(serviceText, "no instalada") || strings.Contains(serviceText, "inactiva") {
-			serviceInstallStatus.SetText(t["serviceInactive"])
-			serviceInstallButton.SetText(t["serviceInstall"])
-			serviceInstallButton.Enable()
-		}
-	}
 
 	applyLanguage = func(language string) {
 		t := translations(language)
@@ -297,14 +271,28 @@ func Run() error {
 		if strings.TrimSpace(saveStatus.Text) != "" {
 			saveStatus.SetText(t["saved"])
 		}
-		canvas.Refresh(statusCard)
-		canvas.Refresh(settingsCard)
-		canvas.Refresh(setupCard)
-		canvas.Refresh(headerRow)
-		refreshInstallLabels(language)
+		// Re-read all live states so status labels are regenerated in the
+		// newly selected language instead of retaining old localized strings.
+		if refreshSession != nil {
+			refreshSession()
+		}
+		if refreshInstallStatus != nil {
+			refreshInstallStatus()
+		}
 		if refreshGitHub != nil {
 			githubStatus.SetText(t["githubLoading"])
 			refreshGitHub()
+		}
+		checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
+		for _, obj := range []fyne.CanvasObject{
+			statusCard, settingsCard, setupCard, headerRow, footer,
+			subtitle, languageSelect, topRight, sessionValue, authValue, duoValue,
+			sessionName, authName, duoName, serverName, usernameName, passwordName,
+			databaseName, saveButton, saveStatus, checkButton,
+			gnomeInstallButton, gnomeInstallStatus, serviceInstallButton, serviceInstallStatus,
+			githubStatus,
+		} {
+			canvas.Refresh(obj)
 		}
 	}
 
@@ -377,7 +365,7 @@ func Run() error {
 		}()
 	}
 
-	refresh := func() {
+	refreshSession = func() {
 		s, e := session.Current()
 		if e != nil {
 			sessionValue.SetText(translations(lang)["sessionUnavailable"] + ": " + e.Error())
@@ -389,7 +377,7 @@ func Run() error {
 		}
 		sessionValue.SetText(fmt.Sprintf(translations(lang)["sessionFormat"], s.ID, lock, s.Type))
 	}
-	refresh()
+	refreshSession()
 	refreshGitHub()
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute)
@@ -403,7 +391,7 @@ func Run() error {
 		ticker := time.NewTicker(4 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
-			fyne.Do(refresh)
+			fyne.Do(refreshSession)
 		}
 	}()
 	log.Println("ProxiLens UI gestartet")
