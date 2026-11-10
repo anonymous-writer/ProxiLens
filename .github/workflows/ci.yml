@@ -62,15 +62,13 @@ jobs:
       - name: Build Wake Agent
         run: |
           mkdir -p dist
-          go build \
-            -trimpath \
-            -o dist/proxilens-wake-agent \
-            ./cmd/proxilens-wake-agent
+          go build -trimpath -o dist/proxilens-wake-agent ./cmd/proxilens-wake-agent
+          go build -trimpath -o dist/proxilens-ui ./cmd/proxilens-ui
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: proxilens-wake-agent-linux-amd64
-          path: dist/proxilens-wake-agent
+          path: dist/*
           if-no-files-found: error
 

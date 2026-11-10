@@ -52,11 +52,8 @@ jobs:
 
           mkdir -p dist/proxilens
 
-          go build \
-            -trimpath \
-            -ldflags="-s -w" \
-            -o dist/proxilens/proxilens-wake-agent \
-            ./cmd/proxilens-wake-agent
+          go build -trimpath -ldflags="-s -w" -o dist/proxilens/proxilens-wake-agent ./cmd/proxilens-wake-agent
+          go build -trimpath -ldflags="-s -w" -o dist/proxilens/proxilens-ui ./cmd/proxilens-ui
 
           cp README.md dist/proxilens/
 

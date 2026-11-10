@@ -10,6 +10,22 @@ screen. The current test version is designed for Ubuntu with GNOME Shell
 > This is not a general security guarantee for other systems or
 > versions.
 
+## Desktop settings window
+
+ProxiLens includes a Fyne-based desktop window with the project logo,
+Authelia connection settings, encrypted credential storage, and a live
+GNOME session / Authelia status panel. The window can be opened from the
+desktop status area when the desktop environment provides StatusNotifier
+/ AppIndicator support. Closing the window hides it so the tray menu can
+reopen it; use the tray menu's quit command to exit the UI.
+
+Build the desktop UI and the background agent with:
+
+```bash
+go build -o dist/proxilens-ui ./cmd/proxilens-ui
+go build -o dist/proxilens-wake-agent ./cmd/proxilens-wake-agent
+```
+
 ## Current feature set
 
 ### GNOME lock screen and Duo button
@@ -182,3 +198,7 @@ ProxiLens is licensed under the MIT License.
 Copyright (c) 2026 Michael Wlotkowski
 
 See the [LICENSE](LICENSE) file for the full license text.
+
+## GitHub status
+
+The desktop dashboard checks the GitHub repository for the latest published release and the most recent successful GitHub Actions run. The status is refreshed every 10 minutes. Links to the repository, releases, and Actions are available in the application footer. If GitHub cannot be reached, the application continues to work and reports that the online status is unavailable.

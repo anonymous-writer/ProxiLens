@@ -1,18 +1,26 @@
 package ui
 
 import (
+	"bytes"
 	"context"
+	"embed"
+	"encoding/json"
 	"fmt"
+	"image/png"
 	"log"
+	"net/http"
+	"net/url"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"fyne.io/fyne/v2"
 	"fyne.io/fyne/v2/app"
+	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
+	"fyne.io/fyne/v2/driver/desktop"
+	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
@@ -21,28 +29,16 @@ import (
 	"github.com/local/proxilens/internal/session"
 )
 
-const defaultAutheliaURL = "https://auth.example.com"
+//go:embed assets/wlm-logo.png assets/icons/proxilens-128px.png
+var logoFS embed.FS
 
 func Run() error {
 	a := app.NewWithID("de.local.proxilens")
 	a.Settings().SetTheme(theme.DarkTheme())
-	w := a.NewWindow("ProxiLens · Session & Auth")
-	w.Resize(fyne.NewSize(780, 680))
+	w := a.NewWindow("ProxiLens")
+	w.Resize(fyne.NewSize(760, 620))
+	w.SetMaster()
 
-	sessionStatus := widget.NewLabel("Sitzungsstatus wird gelesen …")
-	details := widget.NewLabel("")
-	authStatus := widget.NewLabel("Authelia: Verbindung wird geprüft …")
-	authDetails := widget.NewLabel("Authelia-HTTPS-API wird beim Start automatisch geprüft.")
-	deviceFlowStatus := widget.NewLabel("Duo-Authentifizierung: noch nicht gestartet")
-
-	var mu sync.Mutex
-	var unlockArmed bool
-	unlockArm := widget.NewCheck("Einmaligen Entsperrtest nach erfolgreicher Authelia-Prüfung scharf schalten", func(checked bool) {
-		mu.Lock()
-		unlockArmed = checked
-		mu.Unlock()
-	})
-	unlockArm.SetChecked(false)
 	defaultDB, err := configstore.DefaultPath()
 	if err != nil {
 		return err
@@ -52,279 +48,239 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("ProxiLens-Datenbank: %w", err)
 	}
-	defer store.Close()
 	cfg, err := store.Load()
+	store.Close()
 	if err != nil {
 		return fmt.Errorf("Einstellungen laden: %w", err)
 	}
-	if cfg.AutheliaURL == "" {
-		cfg.AutheliaURL = defaultAutheliaURL
-	}
-	identityStatus := widget.NewLabel("Erwartete Authelia-Identität: " + cfg.Username + " (noch nicht authentifiziert)")
-	urlEntry := widget.NewLabel(cfg.AutheliaURL)
-	mode := widget.NewLabel("Sicherheitsmodus: Beobachten – Entsperrtest standardmäßig deaktiviert")
 
-	var flowCancel context.CancelFunc
-	var flowRunning bool
-	appCtx, appCancel := context.WithCancel(context.Background())
-
-	setFlowRunning := func(running bool) {
-		mu.Lock()
-		flowRunning = running
-		mu.Unlock()
+	logoBytes, err := logoFS.ReadFile("assets/wlm-logo.png")
+	if err != nil {
+		return err
 	}
-	isFlowRunning := func() bool {
-		mu.Lock()
-		defer mu.Unlock()
-		return flowRunning
+	statusIconBytes, err := logoFS.ReadFile("assets/icons/proxilens-128px.png")
+	if err != nil {
+		return err
 	}
-	cancelFlow := func() {
-		mu.Lock()
-		cancel := flowCancel
-		flowCancel = nil
-		flowRunning = false
-		mu.Unlock()
-		if cancel != nil {
-			cancel()
-		}
+	a.SetIcon(fyne.NewStaticResource("proxilens-128px.png", statusIconBytes))
+	logo, err := png.Decode(bytes.NewReader(logoBytes))
+	if err != nil {
+		return err
 	}
+	logoImage := canvas.NewImageFromImage(logo)
+	logoImage.SetMinSize(fyne.NewSize(58, 72))
+	logoImage.FillMode = canvas.ImageFillContain
 
-	refreshSession := widget.NewButton("Sitzungsstatus aktualisieren", func() { updateSession(sessionStatus, details) })
-	refreshSession.Importance = widget.HighImportance
+	title := canvas.NewText("ProxiLens", theme.Color(theme.ColorNameForeground))
+	title.TextSize = 30
+	title.TextStyle.Bold = true
+	subtitle := widget.NewLabel("Session Monitor · Authelia & Duo")
+	header := container.NewHBox(logoImage, container.NewVBox(title, subtitle))
 
-	checkAuth := func() {
-		base := cfg.AutheliaURL
-		authStatus.SetText("Authelia: Verbindung wird geprüft …")
-		go func() {
-			ctx, cancel := context.WithTimeout(appCtx, 10*time.Second)
-			defer cancel()
-			result := authelia.Check(ctx, base)
-			fyne.Do(func() {
-				if result.Connected {
-					authStatus.SetText("Authelia: verbunden")
-					authDetails.SetText(result.Message)
-				} else {
-					authStatus.SetText("Authelia: nicht verbunden")
-					authDetails.SetText(result.Message)
-				}
-			})
-		}()
-	}
+	sessionValue := widget.NewLabel("Wird ermittelt …")
+	authValue := widget.NewLabel("Noch nicht geprüft")
+	duoValue := widget.NewLabel("Bereit · wartet auf GNOME-Sperrbildschirm")
+	versionValue := widget.NewLabel("0.0.2 · Alpha")
+	statusCard := widget.NewCard("Systemstatus", "Aktueller Zustand von ProxiLens", container.NewVBox(
+		statusLine("GNOME-Sitzung", sessionValue),
+		statusLine("Authelia", authValue),
+		statusLine("Duo", duoValue),
+	))
 
-	startButton := widget.NewButton("Mit Authelia + Duo Push anmelden", func() {
-		if isFlowRunning() {
+	urlEntry := widget.NewEntry()
+	urlEntry.SetPlaceHolder("https://auth.example.com")
+	urlEntry.SetText(cfg.AutheliaURL)
+	userEntry := widget.NewEntry()
+	userEntry.SetPlaceHolder("Authelia-Benutzername")
+	userEntry.SetText(cfg.Username)
+	passEntry := widget.NewPasswordEntry()
+	passEntry.SetPlaceHolder("Leer lassen, um das gespeicherte Passwort beizubehalten")
+	dbEntry := widget.NewEntry()
+	dbEntry.SetText(dbPath)
+
+	saveStatus := widget.NewLabel("")
+	saveButton := widget.NewButtonWithIcon("Einstellungen speichern", theme.DocumentSaveIcon(), func() {
+		newPath := strings.TrimSpace(dbEntry.Text)
+		if newPath == "" {
+			dialog.ShowError(fmt.Errorf("Datenbankpfad darf nicht leer sein"), w)
 			return
 		}
-		if cfg.Password == "" {
-			deviceFlowStatus.SetText("Bitte zuerst in den Einstellungen das Authelia-Passwort speichern.")
+		next, e := configstore.Open(newPath)
+		if e != nil {
+			dialog.ShowError(e, w)
 			return
 		}
-		ctx, cancel := context.WithCancel(appCtx)
-		mu.Lock()
-		if flowRunning {
-			mu.Unlock()
-			cancel()
+		password := passEntry.Text
+		if password == "" && filepath.Clean(newPath) == filepath.Clean(dbPath) {
+			password = cfg.Password
+		}
+		nextCfg := configstore.Settings{AutheliaURL: strings.TrimSpace(urlEntry.Text), Username: strings.TrimSpace(userEntry.Text), Password: password}
+		if e = next.Save(nextCfg); e != nil {
+			next.Close()
+			dialog.ShowError(e, w)
 			return
 		}
-		flowRunning = true
-		flowCancel = cancel
-		mu.Unlock()
-		deviceFlowStatus.SetText("Authelia-Anmeldung wird gestartet …")
-		identityStatus.SetText("Erwartete Identität: " + cfg.Username + " (Prüfung läuft)")
-		base, username, password := cfg.AutheliaURL, cfg.Username, cfg.Password
-		go func() {
-			err := authelia.AuthenticateDuo(ctx, base, username, password, func(message string) { fyne.Do(func() { deviceFlowStatus.SetText(message) }) })
-			password = ""
-			if err != nil {
-				log.Printf("Duo-Authentifizierung fehlgeschlagen: %v", err)
-			} else {
-				log.Printf("Duo-Authentifizierung und Identitätsprüfung erfolgreich")
-			}
-			mu.Lock()
-			armed := unlockArmed
-			unlockArmed = false
-			mu.Unlock()
-			if err == nil && armed {
-				err = session.UnlockCurrent()
-				if err != nil {
-					err = fmt.Errorf("Identität bestätigt, Entsperrtest aber nicht ausgeführt: %w", err)
-				} else {
-					log.Printf("Sicherheit: einmaliger Entsperrtest für geprüfte Identität ausgeführt")
-				}
-			}
-			fyne.Do(func() {
-				setFlowRunning(false)
-				unlockArm.SetChecked(false)
-				if err != nil {
-					deviceFlowStatus.SetText("Authentifizierung/Entsperrtest fehlgeschlagen: " + err.Error())
-					identityStatus.SetText("Identität nicht bestätigt")
-				} else {
-					deviceFlowStatus.SetText("Duo Push erfolgreich – Identität geprüft")
-					identityStatus.SetText("Authentifiziert als " + username)
-				}
-			})
-		}()
+		loaded, e := next.Load()
+		next.Close()
+		if e != nil {
+			dialog.ShowError(e, w)
+			return
+		}
+		if loaded.Password == "" {
+			dialog.ShowError(fmt.Errorf("Passwort wurde nicht gespeichert"), w)
+			return
+		}
+		cfg, dbPath = loaded, newPath
+		a.Preferences().SetString("database_path", dbPath)
+		passEntry.SetText("")
+		saveStatus.SetText("Einstellungen sicher gespeichert.")
+		checkConnection(cfg.AutheliaURL, authValue)
 	})
-	startButton.Importance = widget.HighImportance
+	settingsCard := widget.NewCard("Verbindungseinstellungen", "Zugangsdaten werden verschlüsselt gespeichert", container.NewVBox(
+		field("Authelia-Server", urlEntry), field("Benutzername", userEntry),
+		field("Passwort", passEntry), field("Datenbankdatei", dbEntry), saveButton, saveStatus,
+	))
 
-	cancelButton := widget.NewButton("Anmeldung abbrechen", func() {
-		cancelFlow()
-		deviceFlowStatus.SetText("Autorisierung abgebrochen")
-		identityStatus.SetText("Identität nicht bestätigt")
-	})
-	checkButton := widget.NewButton("Verbindung erneut prüfen", checkAuth)
-	settingsButton := widget.NewButtonWithIcon("Einstellungen", theme.SettingsIcon(), func() {
-		urlField := widget.NewEntry()
-		urlField.SetText(cfg.AutheliaURL)
-		urlField.SetPlaceHolder("https://auth.example.com")
-		userField := widget.NewEntry()
-		userField.SetText(cfg.Username)
-		passField := widget.NewPasswordEntry()
-		passField.SetPlaceHolder("Leer lassen, um gespeichertes Passwort beizubehalten")
-		pathField := widget.NewEntry()
-		pathField.SetText(dbPath)
-		choosePath := widget.NewButton("Datenbankpfad auswählen …", func() {
-			dlg := dialog.NewFileSave(func(uri fyne.URIWriteCloser, e error) {
-				if e != nil || uri == nil {
-					return
-				}
-				pathField.SetText(uri.URI().Path())
-				_ = uri.Close()
-			}, w)
-			dlg.SetFileName(filepath.Base(pathField.Text))
-			dlg.Show()
-		})
-		form := dialog.NewForm("ProxiLens-Einstellungen", "Speichern", "Abbrechen", []*widget.FormItem{
-			widget.NewFormItem("Authelia-Server", urlField), widget.NewFormItem("Authelia-Benutzer", userField),
-			widget.NewFormItem("Authelia-Passwort", passField), widget.NewFormItem("SQLite-Datenbank", container.NewVBox(pathField, choosePath)),
-		}, func(ok bool) {
-			if !ok {
-				passField.SetText("")
-				return
-			}
-			newPath := strings.TrimSpace(pathField.Text)
-			if newPath == "" {
-				dialog.ShowError(fmt.Errorf("Datenbankpfad darf nicht leer sein"), w)
-				return
-			}
-			newStore, e := configstore.Open(newPath)
-			if e != nil {
-				dialog.ShowError(e, w)
-				return
-			}
-			newCfg := configstore.Settings{AutheliaURL: strings.TrimSpace(urlField.Text), Username: strings.TrimSpace(userField.Text), Password: passField.Text}
-			if newCfg.Password == "" && filepath.Clean(newPath) == filepath.Clean(dbPath) {
-				newCfg.Password = cfg.Password
-			}
-			if e = newStore.Save(newCfg); e != nil {
-				newStore.Close()
-				dialog.ShowError(e, w)
-				return
-			}
-			loaded, e := newStore.Load()
-			newStore.Close()
-			if e != nil {
-				dialog.ShowError(e, w)
-				return
-			}
-			if loaded.Password == "" {
-				dialog.ShowError(fmt.Errorf("Passwort konnte nicht gespeichert werden"), w)
-				return
-			}
-			cfg = loaded
-			dbPath = newPath
-			a.Preferences().SetString("database_path", dbPath)
-			urlEntry.SetText(cfg.AutheliaURL)
-			authDetails.SetText("Einstellungen gespeichert · Datenbank: " + dbPath)
-			checkAuth()
-			passField.SetText("")
-		}, w)
-		form.Resize(fyne.NewSize(560, 340))
-		form.Show()
-	})
-
-	info := widget.NewLabel("ProxiLens prüft das Authelia-Passwort und fordert anschließend direkt Duo Push an. Die Identität wird an den fest konfigurierten Authelia-Benutzer gebunden. Eine Entsperrung erfolgt nur nach ausdrücklicher einmaliger Freigabe und erfolgreicher Duo-Bestätigung; dafür muss die aktive Wayland-Sitzung bereits gesperrt sein. Das Passwort wird AES-256-GCM-verschlüsselt in SQLite gespeichert; der Schlüssel liegt im GNOME-Schlüsselbund. PAM-, GDM- und GNOME-Einstellungen bleiben unverändert.")
-	info.Wrapping = fyne.TextWrapWord
-
-	content := container.NewVBox(
-		widget.NewLabelWithStyle("ProxiLens", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		widget.NewLabel("Session Monitor · Ubuntu 24.04 / GNOME Wayland"), widget.NewSeparator(),
-		widget.NewLabelWithStyle("GNOME-Sitzung", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		sessionStatus, details, refreshSession, widget.NewSeparator(),
-		widget.NewLabelWithStyle("Authelia-Verbindung", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		widget.NewLabel("Server-Adresse"), urlEntry, authStatus, authDetails, container.NewHBox(checkButton, settingsButton), widget.NewSeparator(),
-		widget.NewLabelWithStyle("Direkte Duo-Push-Authentifizierung", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		deviceFlowStatus, container.NewHBox(startButton, cancelButton),
-		unlockArm, identityStatus, widget.NewSeparator(), mode, widget.NewSeparator(), info,
+	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() { checkConnection(cfg.AutheliaURL, authValue) })
+	topRight := widget.NewLabel("Ubuntu · GNOME Wayland")
+	headerRow := container.NewBorder(nil, nil, nil, topRight, header)
+	githubStatus := widget.NewLabel("GitHub-Status wird geladen …")
+	repoURL, _ := url.Parse("https://github.com/anonymous-writer/ProxiLens")
+	releasesURL, _ := url.Parse("https://github.com/anonymous-writer/ProxiLens/releases")
+	actionsURL, _ := url.Parse("https://github.com/anonymous-writer/ProxiLens/actions")
+	githubLinks := container.NewHBox(
+		widget.NewHyperlink("GitHub", repoURL),
+		widget.NewLabel("·"),
+		widget.NewHyperlink("Releases", releasesURL),
+		widget.NewLabel("·"),
+		widget.NewHyperlink("Actions", actionsURL),
+	)
+	footer := container.NewVBox(
+		container.NewHBox(layout.NewSpacer(), widget.NewLabel("ProxiLens"), widget.NewLabel("·"), versionValue, widget.NewLabel("· Status: aktiv")),
+		container.NewHBox(layout.NewSpacer(), githubStatus, githubLinks),
+	)
+	content := container.NewBorder(
+		headerRow,
+		footer,
+		nil, nil,
+		container.NewVScroll(container.NewVBox(statusCard, settingsCard, checkButton)),
 	)
 	w.SetContent(container.NewPadded(content))
 
-	// During an active device flow, the window close button hides the UI
-	// without cancelling authorization. The window is shown again when the
-	// flow finishes. Outside an active flow, closing still asks for confirmation.
-	w.SetCloseIntercept(func() {
-		log.Printf("UI: Schließanforderung erhalten")
-		if isFlowRunning() {
-			// Keep the window visible while authorization is pending.
-			log.Printf("UI: Duo-Anmeldung läuft; Schließen wird ignoriert")
+	showWindow := func() { w.Show(); w.RequestFocus() }
+	if desk, ok := a.(desktop.App); ok {
+		desk.SetSystemTrayMenu(fyne.NewMenu("ProxiLens",
+			fyne.NewMenuItem("Einstellungen öffnen", showWindow),
+			fyne.NewMenuItemSeparator(),
+			fyne.NewMenuItem("ProxiLens beenden", func() { a.Quit() }),
+		))
+	}
+	w.SetCloseIntercept(func() { w.Hide() })
+
+	refreshGitHub := func() {
+		go func() {
+			client := &http.Client{Timeout: 6 * time.Second}
+			fetch := func(endpoint string, target any) error {
+				req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+				if err != nil {
+					return err
+				}
+				req.Header.Set("Accept", "application/vnd.github+json")
+				req.Header.Set("User-Agent", "ProxiLens")
+				resp, err := client.Do(req)
+				if err != nil {
+					return err
+				}
+				defer resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					return fmt.Errorf("GitHub HTTP %s", resp.Status)
+				}
+				return json.NewDecoder(resp.Body).Decode(target)
+			}
+			var release struct {
+				TagName string `json:"tag_name"`
+			}
+			var runs struct {
+				WorkflowRuns []struct {
+					UpdatedAt  string `json:"updated_at"`
+					Conclusion string `json:"conclusion"`
+				} `json:"workflow_runs"`
+			}
+			var latest, ci string
+			if err := fetch("https://api.github.com/repos/anonymous-writer/ProxiLens/releases/latest", &release); err == nil && release.TagName != "" {
+				latest = " · Neueste Version: " + release.TagName
+			}
+			if err := fetch("https://api.github.com/repos/anonymous-writer/ProxiLens/actions/runs?per_page=20", &runs); err == nil {
+				for _, run := range runs.WorkflowRuns {
+					if run.Conclusion == "success" {
+						if parsed, err := time.Parse(time.RFC3339, run.UpdatedAt); err == nil {
+							ci = " · Letzter erfolgreicher CI-Lauf: " + parsed.UTC().Format("02.01.2006 15:04") + " UTC"
+						}
+						break
+					}
+				}
+			}
+			message := "GitHub erreichbar" + latest + ci
+			if latest == "" && ci == "" {
+				message = "GitHub-Status derzeit nicht verfügbar"
+			}
+			fyne.Do(func() { githubStatus.SetText(message) })
+		}()
+	}
+
+	refresh := func() {
+		s, e := session.Current()
+		if e != nil {
+			sessionValue.SetText("Nicht verfügbar: " + e.Error())
 			return
 		}
-		dialog.NewConfirm(
-			"ProxiLens beenden?",
-			"Soll ProxiLens wirklich beendet werden?",
-			func(confirmed bool) {
-				if !confirmed {
-					log.Printf("UI: Schließen abgebrochen; Anwendung bleibt geöffnet")
-					return
-				}
-				log.Printf("UI: Beenden bestätigt")
-				cancelFlow()
-				appCancel()
-				w.SetCloseIntercept(nil)
-				w.Close()
-			},
-			w,
-		).Show()
-	})
-
-	updateSession(sessionStatus, details)
-	checkAuth()
+		lock := "Entsperrt"
+		if s.Locked {
+			lock = "Gesperrt"
+		}
+		sessionValue.SetText(fmt.Sprintf("Sitzung %s · %s · %s", s.ID, lock, s.Type))
+	}
+	refresh()
+	refreshGitHub()
 	go func() {
-		ticker := time.NewTicker(3 * time.Second)
+		ticker := time.NewTicker(10 * time.Minute)
 		defer ticker.Stop()
-		for {
-			select {
-			case <-appCtx.Done():
-				return
-			case <-ticker.C:
-				fyne.Do(func() { updateSession(sessionStatus, details) })
-			}
+		for range ticker.C {
+			refreshGitHub()
 		}
 	}()
-
-	log.Printf("ProxiLens: UI wird gestartet")
+	checkConnection(cfg.AutheliaURL, authValue)
+	go func() {
+		ticker := time.NewTicker(4 * time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			fyne.Do(refresh)
+		}
+	}()
+	log.Println("ProxiLens UI gestartet")
 	w.ShowAndRun()
-	appCancel()
-	cancelFlow()
-	log.Printf("ProxiLens: UI wurde regulär beendet")
 	return nil
 }
 
-func updateSession(status, details *widget.Label) {
-	s, err := session.Current()
-	if err != nil {
-		status.SetText("Status nicht verfügbar: " + err.Error())
-		details.SetText("")
-		return
-	}
-	lock := "nicht gesperrt"
-	if s.Locked {
-		lock = "gesperrt (LockedHint=yes)"
-	}
-	active := "inaktiv"
-	if s.Active {
-		active = "aktiv"
-	}
-	status.SetText(fmt.Sprintf("Sitzung %s · %s", s.ID, lock))
-	details.SetText(fmt.Sprintf("Benutzer: %s\nSitz: %s · Typ: %s · Klasse: %s\nAktiv: %s", s.User, s.Seat, s.Type, s.Class, active))
+func statusLine(label string, value *widget.Label) fyne.CanvasObject {
+	name := widget.NewLabelWithStyle(label, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	return container.NewBorder(nil, nil, name, nil, value)
+}
+func field(label string, input fyne.CanvasObject) fyne.CanvasObject {
+	return container.NewVBox(widget.NewLabelWithStyle(label, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), input)
+}
+func checkConnection(base string, target *widget.Label) {
+	target.SetText("Verbindung wird geprüft …")
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+		defer cancel()
+		result := authelia.Check(ctx, base)
+		fyne.Do(func() {
+			if result.Connected {
+				target.SetText("Verbunden · " + result.Message)
+			} else {
+				target.SetText("Nicht verbunden · " + result.Message)
+			}
+		})
+	}()
 }
