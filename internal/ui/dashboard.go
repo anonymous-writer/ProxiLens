@@ -1,12 +1,14 @@
 package ui
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
 	"image/png"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -21,7 +23,6 @@ import (
 	"fyne.io/fyne/v2/canvas"
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
-	"fyne.io/fyne/v2/driver/desktop"
 	"fyne.io/fyne/v2/layout"
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
@@ -152,10 +153,10 @@ func Run() error {
 	serviceInstallButton := widget.NewButtonWithIcon("Hintergrunddienst installieren", theme.SettingsIcon(), nil)
 	var refreshInstallStatus func()
 	gnomeInstallButton.OnTapped = func() {
-		runInstaller(w, "install-gnome-extension.sh", gnomeInstallStatus, gnomeInstallButton, refreshInstallStatus)
+		runGitHubInstaller(w, "install-gnome-extension.sh", gnomeInstallStatus, gnomeInstallButton, refreshInstallStatus)
 	}
 	serviceInstallButton.OnTapped = func() {
-		runInstaller(w, "install-wake-agent.sh", serviceInstallStatus, serviceInstallButton, refreshInstallStatus)
+		runGitHubInstaller(w, "install-wake-agent.sh", serviceInstallStatus, serviceInstallButton, refreshInstallStatus)
 	}
 	refreshInstallStatus = func() {
 		go func() {
@@ -210,16 +211,6 @@ func Run() error {
 		container.NewVScroll(container.NewVBox(statusCard, setupCard, settingsCard, checkButton)),
 	)
 	w.SetContent(container.NewPadded(content))
-
-	showWindow := func() { w.Show(); w.RequestFocus() }
-	if desk, ok := a.(desktop.App); ok {
-		desk.SetSystemTrayMenu(fyne.NewMenu("ProxiLens",
-			fyne.NewMenuItem("Einstellungen öffnen", showWindow),
-			fyne.NewMenuItemSeparator(),
-			fyne.NewMenuItem("ProxiLens beenden", func() { a.Quit() }),
-		))
-	}
-	w.SetCloseIntercept(func() { w.Hide() })
 
 	refreshGitHub := func() {
 		go func() {
@@ -338,51 +329,214 @@ func commandOutput(name string, args ...string) string {
 	return string(out)
 }
 
-func runInstaller(w fyne.Window, script string, status *widget.Label, button *widget.Button, refresh func()) {
-	root, err := findProjectRoot()
-	if err != nil {
-		dialog.ShowError(err, w)
-		return
-	}
-	status.SetText("Installation läuft …")
+// runGitHubInstaller downloads the repository's current default branch and runs
+// the selected, version-controlled installer script. No local source checkout is
+// required; the running wake-agent remains independent of this UI process.
+func runGitHubInstaller(w fyne.Window, script string, status *widget.Label, button *widget.Button, refresh func()) {
+	status.SetText("Aktueller ProxiLens-Code wird von GitHub geladen …")
 	button.Disable()
+
 	go func() {
-		cmd := exec.Command("bash", filepath.Join(root, "deploy", script))
+		defer func() {
+			fyne.Do(func() { button.Enable() })
+		}()
+
+		root, cleanup, err := downloadGitHubSource()
+		if err != nil {
+			fyne.Do(func() {
+				status.SetText("GitHub-Download fehlgeschlagen")
+				dialog.ShowError(err, w)
+			})
+			return
+		}
+		defer cleanup()
+
+		scriptPath := filepath.Join(root, "deploy", script)
+		if _, err := os.Stat(scriptPath); err != nil {
+			fyne.Do(func() {
+				status.SetText("Installationsdatei fehlt im GitHub-Projekt")
+				dialog.ShowError(fmt.Errorf("GitHub-Quellarchiv enthält deploy/%s nicht: %w", script, err), w)
+			})
+			return
+		}
+
+		fyne.Do(func() { status.SetText("Installation läuft …") })
+		cmd := exec.Command("bash", scriptPath)
 		cmd.Dir = root
 		out, runErr := cmd.CombinedOutput()
+
 		fyne.Do(func() {
 			if runErr != nil {
 				status.SetText("Installation fehlgeschlagen")
-				button.Enable()
 				dialog.ShowError(fmt.Errorf("%s\n%s", runErr, strings.TrimSpace(string(out))), w)
 				return
 			}
-			status.SetText("Installation erfolgreich")
+			status.SetText("Installation erfolgreich · Quelle: GitHub")
 			refresh()
+			if strings.TrimSpace(string(out)) != "" {
+				dialog.ShowInformation("ProxiLens-Installation", strings.TrimSpace(string(out)), w)
+			}
 		})
 	}()
 }
 
-func findProjectRoot() (string, error) {
-	candidates := []string{}
-	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates, cwd)
+// downloadGitHubSource asks GitHub for the repository's default branch, downloads
+// its ZIP archive, and extracts it into a private temporary directory.
+func downloadGitHubSource() (string, func(), error) {
+	const repoAPI = "https://api.github.com/repos/anonymous-writer/ProxiLens"
+
+	tempDir, err := os.MkdirTemp("", "proxilens-github-install-*")
+	if err != nil {
+		return "", func() {}, err
 	}
-	if exe, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Dir(exe))
+	cleanup := func() { _ = os.RemoveAll(tempDir) }
+
+	client := &http.Client{Timeout: 2 * time.Minute}
+	request := func(endpoint string) (*http.Response, error) {
+		req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "application/vnd.github+json")
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+		req.Header.Set("User-Agent", "ProxiLens-Desktop-Installer")
+		return client.Do(req)
 	}
-	for _, candidate := range candidates {
-		for dir := candidate; ; dir = filepath.Dir(dir) {
-			if _, err := os.Stat(filepath.Join(dir, "deploy", "install-gnome-extension.sh")); err == nil {
-				if _, err := os.Stat(filepath.Join(dir, "deploy", "install-wake-agent.sh")); err == nil {
-					return dir, nil
-				}
+
+	metaResp, err := request(repoAPI)
+	if err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("GitHub-Repositoryinformationen konnten nicht geladen werden: %w", err)
+	}
+	defer metaResp.Body.Close()
+	if metaResp.StatusCode != http.StatusOK {
+		cleanup()
+		return "", func() {}, fmt.Errorf("GitHub-Repositoryabfrage fehlgeschlagen: HTTP %s", metaResp.Status)
+	}
+	var metadata struct {
+		DefaultBranch string `json:"default_branch"`
+	}
+	if err := json.NewDecoder(metaResp.Body).Decode(&metadata); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("GitHub-Antwort konnte nicht gelesen werden: %w", err)
+	}
+	if metadata.DefaultBranch == "" || strings.Contains(metadata.DefaultBranch, "..") {
+		cleanup()
+		return "", func() {}, fmt.Errorf("GitHub hat keinen gültigen Standard-Branch geliefert")
+	}
+
+	archiveURL := repoAPI + "/zipball/" + url.PathEscape(metadata.DefaultBranch)
+	archiveResp, err := request(archiveURL)
+	if err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("ProxiLens-Quellarchiv konnte nicht geladen werden: %w", err)
+	}
+	defer archiveResp.Body.Close()
+	if archiveResp.StatusCode != http.StatusOK {
+		cleanup()
+		return "", func() {}, fmt.Errorf("Download des GitHub-Quellarchivs fehlgeschlagen: HTTP %s", archiveResp.Status)
+	}
+
+	archivePath := filepath.Join(tempDir, "source.zip")
+	archiveFile, err := os.OpenFile(archivePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	_, copyErr := io.Copy(archiveFile, io.LimitReader(archiveResp.Body, 100<<20))
+	closeErr := archiveFile.Close()
+	if copyErr != nil || closeErr != nil {
+		cleanup()
+		if copyErr != nil {
+			return "", func() {}, fmt.Errorf("GitHub-Archiv konnte nicht gespeichert werden: %w", copyErr)
+		}
+		return "", func() {}, closeErr
+	}
+
+	zr, err := zip.OpenReader(archivePath)
+	if err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("GitHub-Archiv ist ungültig: %w", err)
+	}
+	defer zr.Close()
+
+	extractRoot := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(extractRoot, 0700); err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+
+	var total int64
+	for _, file := range zr.File {
+		cleanName := filepath.Clean(filepath.FromSlash(file.Name))
+		parts := strings.Split(cleanName, string(os.PathSeparator))
+		if filepath.IsAbs(cleanName) || cleanName == "." || cleanName == ".." ||
+			(len(parts) > 0 && parts[0] == "..") {
+			cleanup()
+			return "", func() {}, fmt.Errorf("Unsicherer Pfad im GitHub-Archiv: %s", file.Name)
+		}
+		// GitHub ZIP archives contain one top-level directory.
+		if len(parts) < 2 {
+			continue
+		}
+		relative := filepath.Join(parts[1:]...)
+		if relative == "." || relative == "" {
+			continue
+		}
+		target := filepath.Join(extractRoot, relative)
+		if !strings.HasPrefix(target, extractRoot+string(os.PathSeparator)) {
+			cleanup()
+			return "", func() {}, fmt.Errorf("Ungültiger Archivpfad: %s", file.Name)
+		}
+		if file.FileInfo().IsDir() {
+			if err := os.MkdirAll(target, 0700); err != nil {
+				cleanup()
+				return "", func() {}, err
 			}
-			parent := filepath.Dir(dir)
-			if parent == dir {
-				break
+			continue
+		}
+		total += int64(file.UncompressedSize64)
+		if total > 200<<20 {
+			cleanup()
+			return "", func() {}, fmt.Errorf("GitHub-Quellarchiv überschreitet die erlaubte Entpackgröße")
+		}
+		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+			cleanup()
+			return "", func() {}, err
+		}
+		in, err := file.Open()
+		if err != nil {
+			cleanup()
+			return "", func() {}, err
+		}
+		out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+		if err != nil {
+			in.Close()
+			cleanup()
+			return "", func() {}, err
+		}
+		_, copyErr := io.Copy(out, io.LimitReader(in, int64(file.UncompressedSize64)+1))
+		in.Close()
+		closeErr := out.Close()
+		if copyErr != nil || closeErr != nil {
+			cleanup()
+			if copyErr != nil {
+				return "", func() {}, copyErr
 			}
+			return "", func() {}, closeErr
+		}
+		if file.Mode()&0111 != 0 {
+			_ = os.Chmod(target, 0700)
 		}
 	}
-	return "", fmt.Errorf("Projektverzeichnis nicht gefunden. Bitte ProxiLens aus dem entpackten Projektordner starten.")
+
+	if _, err := os.Stat(filepath.Join(extractRoot, "deploy", "install-gnome-extension.sh")); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("Im GitHub-Quellarchiv fehlt das GNOME-Installationsskript")
+	}
+	if _, err := os.Stat(filepath.Join(extractRoot, "deploy", "install-wake-agent.sh")); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("Im GitHub-Quellarchiv fehlt das Wake-Agent-Installationsskript")
+	}
+	return extractRoot, cleanup, nil
 }

@@ -228,3 +228,8 @@ The desktop dashboard checks the GitHub repository for the latest published rele
 Die Desktop-Oberfläche erkennt den Installationsstatus der GNOME-Erweiterung `proxilens-input@local` und des systemd-User-Service `proxilens-wake-agent.service`. Über die beiden Schaltflächen unter **Einrichtung** können die vorhandenen Skripte `deploy/install-gnome-extension.sh` und `deploy/install-wake-agent.sh` gestartet werden. Bereits aktive Komponenten werden als installiert angezeigt.
 
 Die Oberfläche startet dabei keine Hintergrundprozesse selbst: Der Wake-Agent bleibt ein eigenständiger systemd-User-Service und läuft unabhängig davon weiter, ob das Einstellungsfenster geöffnet oder geschlossen ist. Die Installer-Schaltflächen benötigen das entpackte Projektverzeichnis mit dem `deploy/`-Ordner; starte die Entwicklungsfassung daher aus dem Projektverzeichnis.
+
+
+## Installation direkt aus GitHub
+
+Die beiden Einrichtungsaktionen in der Desktop-Oberfläche laden das ZIP-Quellarchiv des Standard-Branches dieses Repositorys direkt von GitHub. Anschließend wird das jeweilige Installationsskript aus dem heruntergeladenen Stand ausgeführt. Ein lokal ausgechecktes ProxiLens-Projektverzeichnis ist dafür nicht erforderlich. Für die Installation des Wake-Agent müssen Go in der im `go.mod` angegebenen Version sowie `dbus-monitor` vorhanden sein.
