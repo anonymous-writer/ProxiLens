@@ -100,10 +100,13 @@ func Run() error {
 	authValue := widget.NewLabel("Noch nicht geprüft")
 	duoValue := widget.NewLabel("Bereit · wartet auf GNOME-Sperrbildschirm")
 	versionValue := widget.NewLabel("v1.0.1 · Beta")
+	sessionName := boldLabel("GNOME session")
+	authName := boldLabel("Authelia")
+	duoName := boldLabel("Duo")
 	statusCard := widget.NewCard("Systemstatus", "Aktueller Zustand von ProxiLens", container.NewVBox(
-		statusLine("GNOME-Sitzung", sessionValue),
-		statusLine("Authelia", authValue),
-		statusLine("Duo", duoValue),
+		container.NewBorder(nil, nil, sessionName, nil, sessionValue),
+		container.NewBorder(nil, nil, authName, nil, authValue),
+		container.NewBorder(nil, nil, duoName, nil, duoValue),
 	))
 
 	urlEntry := widget.NewEntry()
@@ -117,6 +120,10 @@ func Run() error {
 	dbEntry := widget.NewEntry()
 	dbEntry.SetText(dbPath)
 
+	serverName := boldLabel("Authelia server")
+	usernameName := boldLabel("Username")
+	passwordName := boldLabel("Password")
+	databaseName := boldLabel("Database file")
 	saveStatus := widget.NewLabel("")
 	saveButton := widget.NewButtonWithIcon("Einstellungen speichern", theme.DocumentSaveIcon(), func() {
 		newPath := strings.TrimSpace(dbEntry.Text)
@@ -156,8 +163,8 @@ func Run() error {
 		checkConnection(cfg.AutheliaURL, authValue)
 	})
 	settingsCard := widget.NewCard("Verbindungseinstellungen", "Zugangsdaten werden verschlüsselt gespeichert", container.NewVBox(
-		field("Authelia-Server", urlEntry), field("Benutzername", userEntry),
-		field("Passwort", passEntry), field("Datenbankdatei", dbEntry), saveButton, saveStatus,
+		container.NewVBox(serverName, urlEntry), container.NewVBox(usernameName, userEntry),
+		container.NewVBox(passwordName, passEntry), container.NewVBox(databaseName, dbEntry), saveButton, saveStatus,
 	))
 
 	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() { checkConnection(cfg.AutheliaURL, authValue) })
@@ -192,22 +199,22 @@ func Run() error {
 			serviceInstalled := strings.TrimSpace(serviceState) == "active"
 			fyne.Do(func() {
 				if gnomeInstalled && gnomeEnabled {
-					gnomeInstallStatus.SetText("Installiert und aktiviert")
+					gnomeInstallStatus.SetText(translations(lang)["gnomeEnabled"])
 					gnomeInstallButton.Disable()
 				} else if gnomeInstalled {
-					gnomeInstallStatus.SetText("Installiert, aber nicht aktiviert")
-					gnomeInstallButton.SetText("GNOME-Erweiterung aktivieren")
+					gnomeInstallStatus.SetText(translations(lang)["gnomeInstalledDisabled"])
+					gnomeInstallButton.SetText(translations(lang)["gnomeEnable"])
 					gnomeInstallButton.Enable()
 				} else {
-					gnomeInstallStatus.SetText("Nicht installiert")
-					gnomeInstallButton.SetText("GNOME-Erweiterung installieren")
+					gnomeInstallStatus.SetText(translations(lang)["notInstalled"])
+					gnomeInstallButton.SetText(translations(lang)["gnomeInstall"])
 					gnomeInstallButton.Enable()
 				}
 				if serviceInstalled {
-					serviceInstallStatus.SetText("Aktiv · läuft unabhängig vom Einstellungsfenster")
+					serviceInstallStatus.SetText(translations(lang)["serviceActive"])
 					serviceInstallButton.Disable()
 				} else {
-					serviceInstallStatus.SetText("Nicht installiert oder nicht aktiv")
+					serviceInstallStatus.SetText(translations(lang)["serviceInactive"])
 					serviceInstallButton.Enable()
 				}
 			})
@@ -236,13 +243,25 @@ func Run() error {
 		container.NewHBox(layout.NewSpacer(), widget.NewLabel("ProxiLens"), widget.NewLabel("·"), versionValue, widget.NewLabel("· Status: aktiv")),
 		container.NewHBox(layout.NewSpacer(), githubStatus, githubLinks),
 	)
-	applyLanguage = func(language string) {
-		translations := map[string]map[string]string{
-			"de": {"subtitle": "Session Monitor · Authelia & Duo", "statusTitle": "Systemstatus", "statusSubtitle": "Aktueller Zustand von ProxiLens", "settingsTitle": "Verbindungseinstellungen", "settingsSubtitle": "Zugangsdaten werden verschlüsselt gespeichert", "save": "Einstellungen speichern", "check": "Verbindung prüfen", "setupTitle": "Einrichtung", "setupSubtitle": "Einmalige Installation der GNOME-Erweiterung und des Hintergrunddienstes", "gnomeInstall": "GNOME-Erweiterung installieren", "serviceInstall": "Hintergrunddienst installieren", "server": "Authelia-Server", "username": "Authelia-Benutzername", "password": "Passwort", "database": "Datenbankdatei", "topRight": "Ubuntu · GNOME Wayland"},
-			"en": {"subtitle": "Session Monitor · Authelia & Duo", "statusTitle": "System status", "statusSubtitle": "Current ProxiLens status", "settingsTitle": "Connection settings", "settingsSubtitle": "Credentials are stored encrypted", "save": "Save settings", "check": "Check connection", "setupTitle": "Setup", "setupSubtitle": "One-time installation of the GNOME extension and background service", "gnomeInstall": "Install GNOME extension", "serviceInstall": "Install background service", "server": "Authelia server", "username": "Authelia username", "password": "Password", "database": "Database file", "topRight": "Ubuntu · GNOME Wayland"},
-			"es": {"subtitle": "Monitor de sesión · Authelia y Duo", "statusTitle": "Estado del sistema", "statusSubtitle": "Estado actual de ProxiLens", "settingsTitle": "Configuración de conexión", "settingsSubtitle": "Las credenciales se guardan cifradas", "save": "Guardar configuración", "check": "Comprobar conexión", "setupTitle": "Instalación", "setupSubtitle": "Instalación única de la extensión GNOME y del servicio en segundo plano", "gnomeInstall": "Instalar extensión GNOME", "serviceInstall": "Instalar servicio en segundo plano", "server": "Servidor Authelia", "username": "Usuario de Authelia", "password": "Contraseña", "database": "Archivo de base de datos", "topRight": "Ubuntu · GNOME Wayland"},
+	refreshInstallLabels := func(language string) {
+		t := translations(language)
+		// Current status labels are refreshed by refreshInstallStatus; this updates
+		// their text immediately when the user changes language.
+		if strings.Contains(gnomeInstallStatus.Text, "Installiert") || strings.Contains(gnomeInstallStatus.Text, "Installed") || strings.Contains(gnomeInstallStatus.Text, "Instalada") {
+			gnomeInstallStatus.SetText(t["gnomeEnabled"])
+		} else if strings.Contains(gnomeInstallStatus.Text, "Nicht installiert") || strings.Contains(gnomeInstallStatus.Text, "Not installed") || strings.Contains(gnomeInstallStatus.Text, "No instalada") {
+			gnomeInstallStatus.SetText(t["notInstalled"])
+		} else if strings.Contains(gnomeInstallStatus.Text, "nicht aktiviert") || strings.Contains(gnomeInstallStatus.Text, "not enabled") || strings.Contains(gnomeInstallStatus.Text, "no activada") {
+			gnomeInstallStatus.SetText(t["gnomeInstalledDisabled"])
 		}
-		t := translations[language]
+		if strings.Contains(serviceInstallStatus.Text, "Aktiv") || strings.Contains(serviceInstallStatus.Text, "Active") {
+			serviceInstallStatus.SetText(t["serviceActive"])
+		} else if strings.Contains(serviceInstallStatus.Text, "Nicht") || strings.Contains(serviceInstallStatus.Text, "Not") {
+			serviceInstallStatus.SetText(t["notInstalled"])
+		}
+	}
+	applyLanguage = func(language string) {
+		t := translations(language)
 		subtitle.SetText(t["subtitle"])
 		statusCard.Title, statusCard.Subtitle = t["statusTitle"], t["statusSubtitle"]
 		settingsCard.Title, settingsCard.Subtitle = t["settingsTitle"], t["settingsSubtitle"]
@@ -251,17 +270,27 @@ func Run() error {
 		checkButton.SetText(t["check"])
 		gnomeInstallButton.SetText(t["gnomeInstall"])
 		serviceInstallButton.SetText(t["serviceInstall"])
-		urlEntry.SetPlaceHolder("https://auth.example.com")
-		userEntry.SetPlaceHolder(t["username"])
-		passEntry.SetPlaceHolder(map[string]string{"de": "Leer lassen, um das gespeicherte Passwort beizubehalten", "en": "Leave empty to keep the saved password", "es": "Déjelo vacío para conservar la contraseña guardada"}[language])
-		_ = t["server"]
-		_ = t["password"]
-		_ = t["database"]
+		topRight.SetText(t["topRight"])
+		serverName.SetText(t["server"])
+		usernameName.SetText(t["username"])
+		passwordName.SetText(t["password"])
+		databaseName.SetText(t["database"])
+		sessionName.SetText(t["session"])
+		authName.SetText(t["authelia"])
+		duoName.SetText(t["duo"])
+		urlEntry.SetPlaceHolder(t["urlPlaceholder"])
+		userEntry.SetPlaceHolder(t["usernamePlaceholder"])
+		passEntry.SetPlaceHolder(t["passwordPlaceholder"])
+		if strings.TrimSpace(saveStatus.Text) != "" {
+			saveStatus.SetText(t["saved"])
+		}
 		canvas.Refresh(statusCard)
 		canvas.Refresh(settingsCard)
 		canvas.Refresh(setupCard)
 		canvas.Refresh(headerRow)
+		refreshInstallLabels(language)
 	}
+
 	applyLanguage(lang)
 	content := container.NewBorder(
 		headerRow,
@@ -354,6 +383,22 @@ func Run() error {
 	log.Println("ProxiLens UI gestartet")
 	w.ShowAndRun()
 	return nil
+}
+
+func translations(language string) map[string]string {
+	all := map[string]map[string]string{
+		"de": {"subtitle": "Monitor für Sitzungen · Authelia & Duo", "statusTitle": "Systemstatus", "statusSubtitle": "Aktueller Zustand von ProxiLens", "settingsTitle": "Verbindungseinstellungen", "settingsSubtitle": "Zugangsdaten werden verschlüsselt gespeichert", "save": "Konfiguration speichern", "check": "Verbindung prüfen", "setupTitle": "Einrichtung", "setupSubtitle": "Einmalige Installation der GNOME-Erweiterung und des Hintergrunddienstes", "gnomeInstall": "GNOME-Erweiterung installieren", "serviceInstall": "Hintergrunddienst installieren", "server": "Authelia-Server", "username": "Benutzername", "password": "Passwort", "database": "Datenbankdatei", "session": "GNOME-Sitzung", "authelia": "Authelia", "duo": "Duo", "topRight": "Ubuntu · GNOME Wayland", "urlPlaceholder": "https://auth.example.com", "usernamePlaceholder": "Authelia-Benutzername", "passwordPlaceholder": "Leer lassen, um das gespeicherte Passwort beizubehalten", "saved": "Einstellungen sicher gespeichert.", "gnomeEnabled": "Installiert und aktiviert", "notInstalled": "Nicht installiert", "serviceActive": "Aktiv · läuft unabhängig vom Einstellungsfenster", "serviceInactive": "Nicht installiert oder nicht aktiv", "gnomeInstalledDisabled": "Installiert, aber nicht aktiviert", "gnomeEnable": "GNOME-Erweiterung aktivieren"},
+		"en": {"subtitle": "Session monitor · Authelia & Duo", "statusTitle": "System status", "statusSubtitle": "Current ProxiLens status", "settingsTitle": "Connection settings", "settingsSubtitle": "Credentials are stored encrypted", "save": "Save configuration", "check": "Check connection", "setupTitle": "Setup", "setupSubtitle": "One-time installation of the GNOME extension and background service", "gnomeInstall": "Install GNOME extension", "serviceInstall": "Install background service", "server": "Authelia server", "username": "Username", "password": "Password", "database": "Database file", "session": "GNOME session", "authelia": "Authelia", "duo": "Duo", "topRight": "Ubuntu · GNOME Wayland", "urlPlaceholder": "https://auth.example.com", "usernamePlaceholder": "Authelia username", "passwordPlaceholder": "Leave empty to keep the saved password", "saved": "Settings saved securely.", "gnomeEnabled": "Installed and enabled", "notInstalled": "Not installed", "serviceActive": "Active · runs independently of the settings window", "serviceInactive": "Not installed or inactive", "gnomeInstalledDisabled": "Installed, but not enabled", "gnomeEnable": "Enable GNOME extension"},
+		"es": {"subtitle": "Monitor de sesión · Authelia y Duo", "statusTitle": "Estado del sistema", "statusSubtitle": "Estado actual de ProxiLens", "settingsTitle": "Configuración de conexión", "settingsSubtitle": "Las credenciales se guardan cifradas", "save": "Guardar configuración", "check": "Comprobar conexión", "setupTitle": "Instalación", "setupSubtitle": "Instalación única de la extensión GNOME y del servicio en segundo plano", "gnomeInstall": "Instalar extensión GNOME", "serviceInstall": "Instalar servicio en segundo plano", "server": "Servidor Authelia", "username": "Nombre de usuario", "password": "Contraseña", "database": "Archivo de base de datos", "session": "Sesión GNOME", "authelia": "Authelia", "duo": "Duo", "topRight": "Ubuntu · GNOME Wayland", "urlPlaceholder": "https://auth.example.com", "usernamePlaceholder": "Usuario de Authelia", "passwordPlaceholder": "Déjelo vacío para conservar la contraseña guardada", "saved": "Configuración guardada de forma segura.", "gnomeEnabled": "Instalada y activada", "notInstalled": "No instalada", "serviceActive": "Activa · funciona independientemente de la ventana de ajustes", "serviceInactive": "No instalada o inactiva", "gnomeInstalledDisabled": "Instalada, pero no activada", "gnomeEnable": "Activar extensión GNOME"},
+	}
+	if t, ok := all[language]; ok {
+		return t
+	}
+	return all["de"]
+}
+
+func boldLabel(text string) *widget.Label {
+	return widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 }
 
 func statusLine(label string, value *widget.Label) fyne.CanvasObject {
