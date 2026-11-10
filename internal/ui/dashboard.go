@@ -62,7 +62,7 @@ func Run() error {
 	if err != nil {
 		return err
 	}
-	a.SetIcon(fyne.NewStaticResource("proxilens-128px.png", statusIconBytes))
+	a.SetIcon(fyne.NewStaticResource("proxilens-app-icon.png", statusIconBytes))
 	logo, err := png.Decode(bytes.NewReader(logoBytes))
 	if err != nil {
 		return err

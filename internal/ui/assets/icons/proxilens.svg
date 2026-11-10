@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>ProxiLens application icon</title>
+<defs>
+ <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#07162e"/><stop offset="1" stop-color="#020817"/></linearGradient>
+ <linearGradient id="cyan" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#53e5ff"/><stop offset="1" stop-color="#1388ff"/></linearGradient>
+ <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#168bff"/><stop offset="1" stop-color="#1747e8"/></linearGradient>
+ <linearGradient id="shield" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#e9fbff"/><stop offset="1" stop-color="#69caff"/></linearGradient>
+ <filter id="glow" x="-40%" y="-40%" width="180%" height="180%"><feGaussianBlur stdDeviation="18" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+</defs>
+<rect x="30" y="30" width="964" height="964" rx="210" fill="url(#bg)" stroke="#1765d8" stroke-width="12"/>
+<g fill="none" stroke="url(#cyan)" stroke-width="34" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)">
+ <path d="M180 330V210Q180 165 225 165H330"/>
+ <path d="M844 330V210Q844 165 799 165H694"/>
+ <path d="M180 694V814Q180 859 225 859H330"/>
+ <path d="M844 694V814Q844 859 799 859H694"/>
+</g>
+<circle cx="512" cy="512" r="325" fill="#061b3d" stroke="#168cff" stroke-width="18"/>
+<g stroke="#69e5ff" stroke-width="10" stroke-linejoin="round">
+ <path d="M512 196L675 292L742 486L635 660L512 746L389 660L282 486L349 292Z" fill="url(#blue)"/>
+ <path d="M512 196L675 292L512 386L349 292Z" fill="url(#cyan)"/>
+ <path d="M675 292L742 486L566 512L512 386Z" fill="#0875ed"/>
+ <path d="M742 486L635 660L512 746L566 512Z" fill="#1452d9"/>
+ <path d="M512 746L389 660L282 486L458 512Z" fill="#0d65ef"/>
+ <path d="M282 486L349 292L512 386L458 512Z" fill="#2aa7ff"/>
+</g>
+<path d="M512 390L635 438V540Q635 674 512 738Q389 674 389 540V438Z" fill="url(#shield)" stroke="#f0fdff" stroke-width="18"/>
+<path d="M512 431L596 463V539Q596 630 512 683Q428 630 428 539V463Z" fill="#0875df"/>
+<circle cx="512" cy="526" r="37" fill="#061a37"/>
+<path d="M492 550H532L525 605H499Z" fill="#061a37"/>
+</svg>
