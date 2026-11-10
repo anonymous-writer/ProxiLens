@@ -72,7 +72,17 @@ mode transition and the authentication workflow report the same state at
 nearly the same time, the status is logged only once and sent to the
 extension only once.
 
-### Sleep/Wake
+### Authentication latency
+
+For an explicit click on the GNOME lock-screen button, the agent starts
+the HTTPS authentication flow immediately. It does not perform a separate
+DNS/TCP preflight first; the HTTPS request itself establishes the connection.
+The post-resume Sleep/Wake path retains the network-readiness retry loop,
+because network services may still be starting after wake. Password
+validation, Duo enrollment verification, Duo Push confirmation, and the
+final locked-session checks are unchanged.
+
+## Sleep/Wake
 
 -   The user agent monitors logind `PrepareForSleep`.
 -   After resume, network availability is checked again because DNS and
