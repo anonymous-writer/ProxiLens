@@ -1,4 +1,4 @@
-# ProxiLens 0.0.2 -- Alpha.7.3.1
+# ProxiLens
 
 ProxiLens is an experimental GNOME/Ubuntu prototype with an optional
 user agent for Sleep/Wake handling and a Duo button on the GNOME lock
@@ -9,6 +9,14 @@ screen. The current test version is designed for Ubuntu with GNOME Shell
 > tested on the project's target device (GNOME Shell 50.1, Wayland).
 > This is not a general security guarantee for other systems or
 > versions.
+
+<p align="center">
+  <img
+    src="https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/ProxiLens-Projekt.png"
+    alt="ProxiLens Manager"
+    width="50%">
+</p>
+
 
 ![ProxiLens web interface](https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/screenshot1.png)
 
