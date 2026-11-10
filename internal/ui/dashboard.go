@@ -83,7 +83,7 @@ func Run() error {
 	sessionValue := widget.NewLabel("Wird ermittelt …")
 	authValue := widget.NewLabel("Noch nicht geprüft")
 	duoValue := widget.NewLabel("Bereit · wartet auf GNOME-Sperrbildschirm")
-	versionValue := widget.NewLabel("0.0.2 · Alpha")
+	versionValue := widget.NewLabel("v1.0.1 · Beta")
 	statusCard := widget.NewCard("Systemstatus", "Aktueller Zustand von ProxiLens", container.NewVBox(
 		statusLine("GNOME-Sitzung", sessionValue),
 		statusLine("Authelia", authValue),
@@ -166,7 +166,7 @@ func Run() error {
 			gnomeInstalled := metadataErr == nil
 			enabledOutput := commandOutput("gnome-extensions", "list", "--enabled")
 			gnomeEnabled := false
-			for _, id := range strings.Split(enabledOutput, "\\n") {
+			for _, id := range strings.Split(enabledOutput, "\n") {
 				if strings.TrimSpace(id) == extensionUUID {
 					gnomeEnabled = true
 					break
