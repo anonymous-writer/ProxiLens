@@ -72,7 +72,17 @@ mode transition and the authentication workflow report the same state at
 nearly the same time, the status is logged only once and sent to the
 extension only once.
 
-### Sleep/Wake
+### Authentication latency
+
+For an explicit click on the GNOME lock-screen button, the agent starts
+the HTTPS authentication flow immediately. It does not perform a separate
+DNS/TCP preflight first; the HTTPS request itself establishes the connection.
+The post-resume Sleep/Wake path retains the network-readiness retry loop,
+because network services may still be starting after wake. Password
+validation, Duo enrollment verification, Duo Push confirmation, and the
+final locked-session checks are unchanged.
+
+## Sleep/Wake
 
 -   The user agent monitors logind `PrepareForSleep`.
 -   After resume, network availability is checked again because DNS and
@@ -212,3 +222,14 @@ See the [LICENSE](LICENSE) file for the full license text.
 ## GitHub status
 
 The desktop dashboard checks the GitHub repository for the latest published release and the most recent successful GitHub Actions run. The status is refreshed every 10 minutes. Links to the repository, releases, and Actions are available in the application footer. If GitHub cannot be reached, the application continues to work and reports that the online status is unavailable.
+
+## Einmalige Einrichtung über die Oberfläche
+
+Die Desktop-Oberfläche erkennt den Installationsstatus der GNOME-Erweiterung `proxilens-input@local` und des systemd-User-Service `proxilens-wake-agent.service`. Über die beiden Schaltflächen unter **Einrichtung** können die vorhandenen Skripte `deploy/install-gnome-extension.sh` und `deploy/install-wake-agent.sh` gestartet werden. Bereits aktive Komponenten werden als installiert angezeigt.
+
+Die Oberfläche startet dabei keine Hintergrundprozesse selbst: Der Wake-Agent bleibt ein eigenständiger systemd-User-Service und läuft unabhängig davon weiter, ob das Einstellungsfenster geöffnet oder geschlossen ist. Die Installer-Schaltflächen benötigen das entpackte Projektverzeichnis mit dem `deploy/`-Ordner; starte die Entwicklungsfassung daher aus dem Projektverzeichnis.
+
+
+## Installation direkt aus GitHub
+
+Die beiden Einrichtungsaktionen in der Desktop-Oberfläche laden das ZIP-Quellarchiv des Standard-Branches dieses Repositorys direkt von GitHub. Anschließend wird das jeweilige Installationsskript aus dem heruntergeladenen Stand ausgeführt. Ein lokal ausgechecktes ProxiLens-Projektverzeichnis ist dafür nicht erforderlich. Für die Installation des Wake-Agent müssen Go in der im `go.mod` angegebenen Version sowie `dbus-monitor` vorhanden sein.

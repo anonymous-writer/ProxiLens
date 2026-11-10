@@ -227,7 +227,7 @@ func (c *coordinator) triggerButtonUnlock() {
 		}()
 		log.Println("Duo-Button auf dem GNOME-Sperrbildschirm betätigt")
 		c.setDuoState("pending")
-		if err := authenticateAndUnlock(func(msg string) { log.Printf("Authentifizierung: %s", msg) }, c.setDuoState); err != nil {
+		if err := authenticateAndUnlock(func(msg string) { log.Printf("Authentifizierung: %s", msg) }, c.setDuoState, false); err != nil {
 			c.setDuoState("failed")
 			log.Printf("Duo-Entsperrung über Sperrbildschirm-Button fehlgeschlagen: %v", err)
 			return
@@ -258,14 +258,14 @@ func (c *coordinator) triggerResume() {
 		}()
 		log.Println("Sleep/Wake erkannt; prüfe, ob die Sitzung weiterhin gesperrt ist")
 		c.setDuoState("pending")
-		if err := authenticateAndUnlock(func(msg string) { log.Printf("Authentifizierung: %s", msg) }, c.setDuoState); err != nil {
+		if err := authenticateAndUnlock(func(msg string) { log.Printf("Authentifizierung: %s", msg) }, c.setDuoState, true); err != nil {
 			c.setDuoState("failed")
 			log.Printf("Duo nach Sleep/Wake nicht abgeschlossen: %v", err)
 		}
 	}()
 }
 
-func authenticateAndUnlock(progress func(string), setState func(string)) error {
+func authenticateAndUnlock(progress func(string), setState func(string), waitForNetwork bool) error {
 	// Confirm that this is still the active, locked Wayland user session.
 	s, err := session.Current()
 	if err != nil {
@@ -293,8 +293,14 @@ func authenticateAndUnlock(progress func(string), setState func(string)) error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	if err := waitForAutheliaNetwork(ctx, cfg.AutheliaURL); err != nil {
-		return err
+	// A manual lock-screen click already happens in an active desktop session.
+	// Let the HTTPS client connect immediately instead of adding a separate
+	// DNS/TCP preflight. After resume, retain the retry loop because networking
+	// may still be coming back online.
+	if waitForNetwork {
+		if err := waitForAutheliaNetwork(ctx, cfg.AutheliaURL); err != nil {
+			return err
+		}
 	}
 	if err := authelia.AuthenticateDuo(ctx, cfg.AutheliaURL, cfg.Username, cfg.Password, progress); err != nil {
 		return err
