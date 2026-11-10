@@ -257,10 +257,10 @@ func Run() error {
 		_ = t["server"]
 		_ = t["password"]
 		_ = t["database"]
-		widget.Refresh(statusCard)
-		widget.Refresh(settingsCard)
-		widget.Refresh(setupCard)
-		widget.Refresh(headerRow)
+		canvas.Refresh(statusCard)
+		canvas.Refresh(settingsCard)
+		canvas.Refresh(setupCard)
+		canvas.Refresh(headerRow)
 	}
 	applyLanguage(lang)
 	content := container.NewBorder(
