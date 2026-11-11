@@ -37,10 +37,8 @@ fi
 # Locate the custom ProxiLens app icon. The personal WLM logo is intentionally not used.
 ICON_SOURCE=""
 for candidate in \
-    "${PROJECT_ROOT}/internal/ui/assets/icons/proxilens-512px.png" \
-    "${PROJECT_ROOT}/internal/ui/assets/icons/icon-512.png" \
-    "${PROJECT_ROOT}/assets/icons/proxilens-512px.png" \
-    "${PROJECT_ROOT}/assets/icons/icon-512.png"
+    "${PROJECT_ROOT}/static/icons/proxilens-512px.png" \
+    "${PROJECT_ROOT}/static/icons/icon-512.png"
 do
     if [[ -f "$candidate" ]]; then
         ICON_SOURCE="$candidate"
