@@ -14,38 +14,31 @@ handle the authentication request and session-unlock workflow.
 > validated across all GNOME, Ubuntu, or hardware versions. Review the
 > security limitations below before using it.
 
-```{=html}
 <p align="center">
-```
-`<img
+  <img
     src="https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/ProxiLens-Projekt.png"
     alt="ProxiLens project overview"
-    width="72%">`{=html}
-```{=html}
+    width="72%">
 </p>
-```
+
 ## Screenshots
 
-```{=html}
 <p align="center">
-```
-`<img
+  <img
     src="https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/AppleWatch.png"
     alt="ProxiLens Apple Watch view"
-    width="47%">`{=html}    `<img
+    width="47%">
+  &nbsp;&nbsp;
+  <img
     src="https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/iPhone.png"
     alt="ProxiLens iPhone view"
-    width="47%">`{=html}
-```{=html}
+    width="47%">
 </p>
-```
-```{=html}
+
 <p align="center">
-```
-`<em>`{=html}Apple Watch and iPhone views`</em>`{=html}
-```{=html}
+  <em>Apple Watch and iPhone views</em>
 </p>
-```
+
 ## Overview
 
 ### GNOME lock screen and Duo authentication
