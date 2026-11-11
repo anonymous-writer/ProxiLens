@@ -6,19 +6,29 @@
   <summary>Monitor für Sitzungen – Authelia &amp; Duo</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-3.0-or-later</project_license>
+  <project_license>MIT</project_license>
 
   <description>
     <p>
-      ProxiLens provides a desktop settings application,
-      a GNOME Shell extension and a user-session wake agent
-      for Authelia and Duo integration.
+      ProxiLens provides a desktop settings application, a GNOME Shell
+      extension and a user-session wake agent for Authelia and Duo integration.
     </p>
   </description>
 
   <launchable type="desktop-id">proxilens.desktop</launchable>
 
+  <!-- Prefer the installed icon-theme entry; use the absolute local icon as fallback. -->
   <icon type="stock">proxilens</icon>
+  <icon type="local" width="512" height="512">/usr/share/icons/hicolor/512x512/apps/proxilens.png</icon>
+
+  <screenshots>
+    <screenshot type="default">
+      <image width="1055" height="800">https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/screenshot1.png</image>
+      <caption>ProxiLens – Übersicht der Sitzungsüberwachung und Einrichtung</caption>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/anonymous-writer/ProxiLens</url>
 
   <categories>
     <category>Utility</category>
