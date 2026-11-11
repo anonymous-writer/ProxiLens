@@ -21,4 +21,5 @@ override_dh_auto_install:
 	install -D -m 0644 packaging/debian/proxilens.desktop debian/tmp/usr/share/applications/proxilens.desktop
 	install -D -m 0644 packaging/debian/proxilens-wake-agent.service debian/tmp/usr/lib/systemd/user/proxilens-wake-agent.service
 	install -d -m 0755 debian/tmp/usr/share/gnome-shell/extensions/proxilens-input@local
-	cp -a gnome-extension/proxilens-input@local/. debian/tmp/usr/share/gnome-shell/extensions/proxilens-input@local/
+        install -D -m 0644 packaging/debian/proxilens.metainfo.xml debian/tmp/usr/share/metainfo/proxilens.metainfo.xml	
+        cp -a gnome-extension/proxilens-input@local/. debian/tmp/usr/share/gnome-shell/extensions/proxilens-input@local/

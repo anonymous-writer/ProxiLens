@@ -4,3 +4,4 @@ usr/lib/systemd/user/proxilens-wake-agent.service
 usr/share/applications/proxilens.desktop
 usr/share/icons/hicolor/512x512/apps/proxilens.png
 usr/share/gnome-shell/extensions/proxilens-input@local/
+usr/share/metainfo/proxilens.metainfo.xml

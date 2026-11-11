@@ -1,0 +1,92 @@
+
+name: Build GitHub release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  linux:
+    name: Build Linux ${{ matrix.arch }} release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            xorg-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            wayland-protocols
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Resolve dependencies
+        run: go mod download
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Build release
+        env:
+          VERSION: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist/proxilens
+
+          go build -trimpath -ldflags="-s -w" -o dist/proxilens/proxilens-wake-agent ./cmd/proxilens-wake-agent
+          go build -trimpath -ldflags="-s -w" -o dist/proxilens/proxilens-ui .
+
+          cp README.md dist/proxilens/
+
+          if [ -f LICENSE ]; then
+            cp LICENSE dist/proxilens/
+          fi
+
+          printf '%s\n' "$VERSION" > dist/proxilens/VERSION
+
+          tar -czf "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.tar.gz" \
+            -C dist proxilens
+
+          sha256sum \
+            "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.tar.gz" \
+            > "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.tar.gz.sha256"
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          gh release upload "$TAG" \
+            "dist/ProxiLens-${TAG}-linux-${{ matrix.arch }}.tar.gz" \
+            "dist/ProxiLens-${TAG}-linux-${{ matrix.arch }}.tar.gz.sha256" \
+            --clobber
+
