@@ -463,11 +463,11 @@ func runGitHubInstaller(w fyne.Window, script string, status *widget.Label, butt
 		}
 		defer cleanup()
 
-		scriptPath := filepath.Join(root, "scripts", script)
-		if _, err := os.Stat(scriptPath); err != nil {
+		scriptPath, pathErr := findInstallerScript(root, script)
+		if pathErr != nil {
 			fyne.Do(func() {
 				status.SetText(i18n.Translations(language())["installScriptMissing"])
-				dialog.ShowError(fmt.Errorf("GitHub-Quellarchiv enthält scripts/%s nicht: %w", script, err), w)
+				dialog.ShowError(pathErr, w)
 			})
 			return
 		}
@@ -642,13 +642,71 @@ func downloadGitHubSource() (string, func(), error) {
 		}
 	}
 
-	if _, err := os.Stat(filepath.Join(extractRoot, "scripts", "install-gnome-extension.sh")); err != nil {
+	projectRoot, err := findInstallerProjectRoot(extractRoot)
+	if err != nil {
 		cleanup()
-		return "", func() {}, fmt.Errorf("Im GitHub-Quellarchiv fehlt das GNOME-Installationsskript")
+		return "", func() {}, err
 	}
-	if _, err := os.Stat(filepath.Join(extractRoot, "scripts", "install-wake-agent.sh")); err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("Im GitHub-Quellarchiv fehlt das Wake-Agent-Installationsskript")
+	return projectRoot, cleanup, nil
+}
+
+// findInstallerProjectRoot locates the project regardless of whether GitHub's
+// archive has one wrapper directory, an additional nested project directory,
+// or the older deploy/ layout.
+func findInstallerProjectRoot(extractRoot string) (string, error) {
+	var candidates []string
+	err := filepath.WalkDir(extractRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if !entry.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(extractRoot, path)
+		if err != nil {
+			return err
+		}
+		if strings.Count(rel, string(os.PathSeparator)) > 5 {
+			return filepath.SkipDir
+		}
+		scriptsDir := filepath.Join(path, "scripts")
+		deployDir := filepath.Join(path, "deploy")
+		hasScripts := fileExists(filepath.Join(scriptsDir, "install-gnome-extension.sh")) &&
+			fileExists(filepath.Join(scriptsDir, "install-wake-agent.sh"))
+		hasDeploy := fileExists(filepath.Join(deployDir, "install-gnome-extension.sh")) &&
+			fileExists(filepath.Join(deployDir, "install-wake-agent.sh"))
+		if hasScripts || hasDeploy {
+			candidates = append(candidates, path)
+			return filepath.SkipDir
+		}
+		return nil
+	})
+	if err != nil {
+		return "", fmt.Errorf("GitHub-Archiv konnte nicht nach Installationsskripten durchsucht werden: %w", err)
 	}
-	return extractRoot, cleanup, nil
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("Im GitHub-Quellarchiv wurden die beiden Installationsskripte nicht gefunden. Erwartet werden scripts/install-gnome-extension.sh und scripts/install-wake-agent.sh (alternativ deploy/...). Bitte prüfe, ob die aktuelle Dateistruktur bereits in den GitHub-Standard-Branch hochgeladen wurde.")
+	}
+	if len(candidates) > 1 {
+		return "", fmt.Errorf("Im GitHub-Quellarchiv wurden mehrere mögliche ProxiLens-Projektverzeichnisse gefunden; die Installation wurde aus Sicherheitsgründen abgebrochen.")
+	}
+	return candidates[0], nil
+}
+
+func findInstallerScript(projectRoot, script string) (string, error) {
+	if filepath.Base(script) != script || (script != "install-gnome-extension.sh" && script != "install-wake-agent.sh") {
+		return "", fmt.Errorf("Unzulässiger Name des Installationsskripts: %s", script)
+	}
+	for _, dir := range []string{"scripts", "deploy"} {
+		candidate := filepath.Join(projectRoot, dir, script)
+		if fileExists(candidate) {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("Installationsskript %s wurde weder unter scripts/ noch unter deploy/ gefunden.", script)
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && !info.IsDir()
 }
