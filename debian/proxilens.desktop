@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=ProxiLens
+GenericName=Session Monitor
+Comment=Session Monitor for Authelia and Duo
+Exec=/usr/bin/proxilens-ui
+Icon=proxilens
+Terminal=false
+Categories=Utility;Security;
+StartupNotify=true

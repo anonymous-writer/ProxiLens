@@ -1,0 +1,13 @@
+#!/bin/sh
+set -e
+case "$1" in
+  configure)
+    if command -v update-desktop-database >/dev/null 2>&1; then
+      update-desktop-database >/dev/null 2>&1 || true
+    fi
+    # The agent deliberately remains disabled: it needs each user's
+    # graphical session, session D-Bus and GNOME keyring.
+    ;;
+esac
+#DEBHELPER#
+exit 0

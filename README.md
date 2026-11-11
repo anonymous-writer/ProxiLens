@@ -207,6 +207,45 @@ systemctl --user restart proxilens-wake-agent.service
 Keep a copy of the previously working version before updating so that
 you can roll back if needed.
 
+### Option C: Debian package (.deb)
+
+The repository now contains Debian packaging metadata in `debian/`. Build on
+Debian/Ubuntu with Go 1.27 or newer (the version required by `go.mod`) and the
+packaging and Fyne build dependencies installed:
+
+```bash
+sudo apt-get install debhelper dpkg-dev golang-go build-essential pkg-config \\
+  libgl1-mesa-dev libegl1-mesa-dev xorg-dev libwayland-dev \\
+  libxkbcommon-dev wayland-protocols
+./scripts/build-deb.sh
+```
+
+The resulting architecture-specific package is written to the parent
+directory. Install it with:
+
+```bash
+sudo apt install ./proxilens_1.0.0-1_$(dpkg --print-architecture).deb
+```
+
+The package installs both executables in `/usr/bin`, the desktop entry and
+icon system-wide, the GNOME extension in
+`/usr/share/gnome-shell/extensions/proxilens-input@local`, and the systemd
+**user** unit in `/usr/lib/systemd/user`.
+
+The GNOME extension is installed system-wide but must be enabled separately
+for each desktop user (for example from ProxiLens or with
+`gnome-extensions enable proxilens-input@local`). The Wake Agent is not
+enabled or started automatically. Each user who wants it can run:
+
+```bash
+systemctl --user daemon-reload
+systemctl --user enable --now proxilens-wake-agent.service
+```
+
+The package does not create a root service, does not enable the agent for all
+users, and does not remove `~/.config/proxilens` on package removal. Existing
+user settings and the GNOME keyring encryption key remain user-owned.
+
 ### Verify the GNOME extension
 
 ``` bash

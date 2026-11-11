@@ -1,0 +1,19 @@
+Source: proxilens
+Section: utils
+Priority: optional
+Maintainer: ProxiLens Maintainers <maintainers@example.invalid>
+Build-Depends: debhelper-compat (= 13), golang-any, build-essential, pkg-config, libgl1-mesa-dev, libegl1-mesa-dev, xorg-dev, libwayland-dev, libxkbcommon-dev, wayland-protocols
+Standards-Version: 4.7.0
+Rules-Requires-Root: no
+Homepage: https://github.com/anonymous-writer/ProxiLens
+
+Package: proxilens
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, dbus-bin, gnome-shell, libgl1, libegl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libwayland-client0, libxkbcommon0, libsecret-1-0
+Description: GNOME lock-screen integration for Authelia and Duo
+ ProxiLens provides a desktop settings application, a user-session
+ wake agent, and a GNOME Shell extension for an explicit Duo unlock
+ action on supported GNOME Wayland sessions.
+ .
+ The wake agent is installed as a systemd user service and is not
+ enabled automatically. Each desktop user can enable it manually.

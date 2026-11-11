@@ -1,0 +1,5 @@
+proxilens (1.0.0-1) unstable; urgency=medium
+
+  * Initial Debian package with UI, user wake agent and system-wide GNOME extension.
+
+ -- ProxiLens Maintainers <maintainers@example.invalid>  Wed, 11 Nov 2026 18:00:00 +0100

@@ -182,17 +182,56 @@ func Run() error {
 	serviceInstallButton := widget.NewButtonWithIcon("Hintergrunddienst installieren", theme.SettingsIcon(), nil)
 	var refreshInstallStatus func()
 	gnomeInstallButton.OnTapped = func() {
+		if _, err := os.Stat("/usr/share/gnome-shell/extensions/proxilens-input@local/metadata.json"); err == nil {
+			gnomeInstallButton.Disable()
+			go func() {
+				cmd := exec.Command("gnome-extensions", "enable", "proxilens-input@local")
+				out, enableErr := cmd.CombinedOutput()
+				fyne.Do(func() {
+					if enableErr != nil {
+						dialog.ShowError(fmt.Errorf("GNOME-Erweiterung konnte nicht aktiviert werden: %v\\n%s", enableErr, strings.TrimSpace(string(out))), w)
+					}
+					refreshInstallStatus()
+				})
+			}()
+			return
+		}
 		runGitHubInstaller(w, "install-gnome-extension.sh", gnomeInstallStatus, gnomeInstallButton, refreshInstallStatus, func() string { return lang })
 	}
 	serviceInstallButton.OnTapped = func() {
+		if _, err := os.Stat("/usr/lib/systemd/user/proxilens-wake-agent.service"); err == nil {
+			serviceInstallButton.Disable()
+			go func() {
+				cmd := exec.Command("systemctl", "--user", "enable", "--now", "proxilens-wake-agent.service")
+				out, startErr := cmd.CombinedOutput()
+				fyne.Do(func() {
+					if startErr != nil {
+						serviceInstallStatus.SetText(i18n.Translations(lang)["serviceInactive"])
+						dialog.ShowError(fmt.Errorf("Wake-Agent konnte nicht aktiviert werden: %v\\n%s", startErr, strings.TrimSpace(string(out))), w)
+					} else {
+						serviceInstallStatus.SetText(i18n.Translations(lang)["serviceActive"])
+					}
+					refreshInstallStatus()
+				})
+			}()
+			return
+		}
 		runGitHubInstaller(w, "install-wake-agent.sh", serviceInstallStatus, serviceInstallButton, refreshInstallStatus, func() string { return lang })
 	}
 	refreshInstallStatus = func() {
 		go func() {
 			const extensionUUID = "proxilens-input@local"
-			extensionDir := filepath.Join(os.Getenv("HOME"), ".local", "share", "gnome-shell", "extensions", extensionUUID)
-			_, metadataErr := os.Stat(filepath.Join(extensionDir, "metadata.json"))
-			gnomeInstalled := metadataErr == nil
+			extensionDirs := []string{
+				filepath.Join("/usr/share/gnome-shell/extensions", extensionUUID),
+				filepath.Join(os.Getenv("HOME"), ".local", "share", "gnome-shell", "extensions", extensionUUID),
+			}
+			gnomeInstalled := false
+			for _, extensionDir := range extensionDirs {
+				if _, metadataErr := os.Stat(filepath.Join(extensionDir, "metadata.json")); metadataErr == nil {
+					gnomeInstalled = true
+					break
+				}
+			}
 			enabledOutput := commandOutput("gnome-extensions", "list", "--enabled")
 			gnomeEnabled := false
 			for _, id := range strings.Split(enabledOutput, "\n") {

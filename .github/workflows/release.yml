@@ -78,6 +78,17 @@ jobs:
             "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.tar.gz" \
             > "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.tar.gz.sha256"
 
+          # Match the Debian package version to the published GitHub tag.
+          DEB_VERSION="${VERSION#v}"
+          sed -i "1s/^proxilens ([^)]*)/proxilens (${DEB_VERSION}-1)/" debian/changelog
+
+          # Build the Debian package from the same architecture-specific runner.
+          sudo apt-get update
+          sudo apt-get install -y debhelper dpkg-dev
+          dpkg-buildpackage -us -uc -b -d
+          cp "../proxilens_${DEB_VERSION}-1_$(dpkg --print-architecture).deb" "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.deb"
+          sha256sum "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.deb" > "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.deb.sha256"
+
       - name: Upload release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -88,5 +99,7 @@ jobs:
           gh release upload "$TAG" \
             "dist/ProxiLens-${TAG}-linux-${{ matrix.arch }}.tar.gz" \
             "dist/ProxiLens-${TAG}-linux-${{ matrix.arch }}.tar.gz.sha256" \
+            "dist/ProxiLens-${TAG}-linux-${{ matrix.arch }}.deb" \
+            "dist/ProxiLens-${TAG}-linux-${{ matrix.arch }}.deb.sha256" \
             --clobber
 

@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+case "$1" in
+  remove|deconfigure)
+    # Do not attempt to control every user's systemd --user manager here.
+    # The package owns only the unit file; user data is never removed.
+    ;;
+esac
+#DEBHELPER#
+exit 0

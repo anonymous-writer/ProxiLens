@@ -1,0 +1,24 @@
+#!/usr/bin/make -f
+export DH_VERBOSE = 1
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export CGO_ENABLED = 1
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	mkdir -p build
+	go build -trimpath -ldflags="-s -w" -o build/proxilens-ui .
+	go build -trimpath -ldflags="-s -w" -o build/proxilens-wake-agent ./cmd/proxilens-wake-agent
+
+override_dh_auto_test:
+	go test ./...
+
+override_dh_auto_install:
+	install -D -m 0755 build/proxilens-ui debian/tmp/usr/bin/proxilens-ui
+	install -D -m 0755 build/proxilens-wake-agent debian/tmp/usr/bin/proxilens-wake-agent
+	install -D -m 0644 static/icons/proxilens-512px.png debian/tmp/usr/share/icons/hicolor/512x512/apps/proxilens.png
+	install -D -m 0644 packaging/debian/proxilens.desktop debian/tmp/usr/share/applications/proxilens.desktop
+	install -D -m 0644 packaging/debian/proxilens-wake-agent.service debian/tmp/usr/lib/systemd/user/proxilens-wake-agent.service
+	install -d -m 0755 debian/tmp/usr/share/gnome-shell/extensions/proxilens-input@local
+	cp -a gnome-extension/proxilens-input@local/. debian/tmp/usr/share/gnome-shell/extensions/proxilens-input@local/
