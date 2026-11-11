@@ -25,18 +25,25 @@ handle the authentication request and session-unlock workflow.
 
 <p align="center">
   <img
-    src="https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/AppleWatch.png"
-    alt="ProxiLens Apple Watch view"
-    width="47%">
-  &nbsp;&nbsp;
-  <img
-    src="https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/iPhone.png"
-    alt="ProxiLens iPhone view"
-    width="47%">
+    src="https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/screenshot1.png"
+    alt="ProxiLens desktop application"
+    width="100%">
 </p>
 
 <p align="center">
-  <em>Apple Watch and iPhone views</em>
+  <img
+    src="https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/AppleWatch.png"
+    alt="ProxiLens Apple Watch screenshot"
+    width="48%">
+  &nbsp;
+  <img
+    src="https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/iPhone.png"
+    alt="ProxiLens iPhone screenshot"
+    width="48%">
+</p>
+
+<p align="center">
+  <em>ProxiLens desktop application, Apple Watch and iPhone views</em>
 </p>
 
 ## Overview
