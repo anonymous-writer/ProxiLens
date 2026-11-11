@@ -1,10 +1,9 @@
-package ui
+package app
 
 import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"image/png"
@@ -29,18 +28,17 @@ import (
 
 	"github.com/local/proxilens/internal/authelia"
 	"github.com/local/proxilens/internal/configstore"
+	"github.com/local/proxilens/internal/i18n"
 	"github.com/local/proxilens/internal/session"
+	staticassets "github.com/local/proxilens/static"
 )
-
-//go:embed assets/wlm-logo.png assets/icons/proxilens-128px.png
-var logoFS embed.FS
 
 func Run() error {
 	a := app.NewWithID("de.local.proxilens")
 	a.Settings().SetTheme(theme.DarkTheme())
 	w := a.NewWindow("ProxiLens")
 	lang := a.Preferences().StringWithFallback("language", "de")
-	if lang != "de" && lang != "en" && lang != "es" {
+	if !i18n.HasLanguage(lang) {
 		lang = "de"
 	}
 	w.Resize(fyne.NewSize(760, 620))
@@ -61,11 +59,11 @@ func Run() error {
 		return fmt.Errorf("Einstellungen laden: %w", err)
 	}
 
-	logoBytes, err := logoFS.ReadFile("assets/wlm-logo.png")
+	logoBytes, err := staticassets.FS.ReadFile("wlm-logo.png")
 	if err != nil {
 		return err
 	}
-	statusIconBytes, err := logoFS.ReadFile("assets/icons/proxilens-128px.png")
+	statusIconBytes, err := staticassets.FS.ReadFile("icons/proxilens-128px.png")
 	if err != nil {
 		return err
 	}
@@ -85,8 +83,16 @@ func Run() error {
 	header := container.NewHBox(logoImage, container.NewVBox(title, subtitle))
 	var applyLanguage func(string)
 	var refreshSession func()
-	languageSelect := widget.NewSelect([]string{"🇩🇪 Deutsch", "🇬🇧 English", "🇪🇸 Español"}, func(choice string) {
-		selected := map[string]string{"🇩🇪 Deutsch": "de", "🇬🇧 English": "en", "🇪🇸 Español": "es"}[choice]
+	languageLabels := make(map[string]string, len(i18n.Languages()))
+	languageCodes := make(map[string]string, len(i18n.Languages()))
+	languageOptions := make([]string, 0, len(i18n.Languages()))
+	for _, code := range i18n.Languages() {
+		label := i18n.LanguageLabel(code)
+		languageLabels[code], languageCodes[label] = label, code
+		languageOptions = append(languageOptions, label)
+	}
+	languageSelect := widget.NewSelect(languageOptions, func(choice string) {
+		selected := languageCodes[choice]
 		if selected != "" {
 			lang = selected
 			a.Preferences().SetString("language", lang)
@@ -95,11 +101,11 @@ func Run() error {
 			}
 		}
 	})
-	languageSelect.SetSelected(map[string]string{"de": "🇩🇪 Deutsch", "en": "🇬🇧 English", "es": "🇪🇸 Español"}[lang])
+	languageSelect.SetSelected(languageLabels[lang])
 
-	sessionValue := widget.NewLabel(translations(lang)["gnomeChecking"])
-	authValue := widget.NewLabel(translations(lang)["checking"])
-	duoValue := widget.NewLabel(translations(lang)["duoReady"])
+	sessionValue := widget.NewLabel(i18n.Translations(lang)["gnomeChecking"])
+	authValue := widget.NewLabel(i18n.Translations(lang)["checking"])
+	duoValue := widget.NewLabel(i18n.Translations(lang)["duoReady"])
 	sessionName := boldLabel("GNOME session")
 	authName := boldLabel("Authelia")
 	duoName := boldLabel("Duo")
@@ -128,7 +134,7 @@ func Run() error {
 	saveButton := widget.NewButtonWithIcon("Einstellungen speichern", theme.DocumentSaveIcon(), func() {
 		newPath := strings.TrimSpace(dbEntry.Text)
 		if newPath == "" {
-			dialog.ShowError(fmt.Errorf("%s", translations(lang)["saveErrorDB"]), w)
+			dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["saveErrorDB"]), w)
 			return
 		}
 		next, e := configstore.Open(newPath)
@@ -153,13 +159,13 @@ func Run() error {
 			return
 		}
 		if loaded.Password == "" {
-			dialog.ShowError(fmt.Errorf("%s", translations(lang)["passwordNotSaved"]), w)
+			dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["passwordNotSaved"]), w)
 			return
 		}
 		cfg, dbPath = loaded, newPath
 		a.Preferences().SetString("database_path", dbPath)
 		passEntry.SetText("")
-		saveStatus.SetText(translations(lang)["saved"])
+		saveStatus.SetText(i18n.Translations(lang)["saved"])
 		checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
 	})
 	settingsCard := widget.NewCard("Verbindungseinstellungen", "Zugangsdaten werden verschlüsselt gespeichert", container.NewVBox(
@@ -170,8 +176,8 @@ func Run() error {
 	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() { checkConnection(cfg.AutheliaURL, authValue, func() string { return lang }) })
 
 	// Installationseinrichtung: Die beiden Komponenten laufen unabhängig von diesem Fenster.
-	gnomeInstallStatus := widget.NewLabel(translations(lang)["gnomeChecking"])
-	serviceInstallStatus := widget.NewLabel(translations(lang)["serviceChecking"])
+	gnomeInstallStatus := widget.NewLabel(i18n.Translations(lang)["gnomeChecking"])
+	serviceInstallStatus := widget.NewLabel(i18n.Translations(lang)["serviceChecking"])
 	gnomeInstallButton := widget.NewButtonWithIcon("GNOME-Erweiterung installieren", theme.DownloadIcon(), nil)
 	serviceInstallButton := widget.NewButtonWithIcon("Hintergrunddienst installieren", theme.SettingsIcon(), nil)
 	var refreshInstallStatus func()
@@ -199,22 +205,22 @@ func Run() error {
 			serviceInstalled := strings.TrimSpace(serviceState) == "active"
 			fyne.Do(func() {
 				if gnomeInstalled && gnomeEnabled {
-					gnomeInstallStatus.SetText(translations(lang)["gnomeEnabled"])
+					gnomeInstallStatus.SetText(i18n.Translations(lang)["gnomeEnabled"])
 					gnomeInstallButton.Disable()
 				} else if gnomeInstalled {
-					gnomeInstallStatus.SetText(translations(lang)["gnomeInstalledDisabled"])
-					gnomeInstallButton.SetText(translations(lang)["gnomeEnable"])
+					gnomeInstallStatus.SetText(i18n.Translations(lang)["gnomeInstalledDisabled"])
+					gnomeInstallButton.SetText(i18n.Translations(lang)["gnomeEnable"])
 					gnomeInstallButton.Enable()
 				} else {
-					gnomeInstallStatus.SetText(translations(lang)["notInstalled"])
-					gnomeInstallButton.SetText(translations(lang)["gnomeInstall"])
+					gnomeInstallStatus.SetText(i18n.Translations(lang)["notInstalled"])
+					gnomeInstallButton.SetText(i18n.Translations(lang)["gnomeInstall"])
 					gnomeInstallButton.Enable()
 				}
 				if serviceInstalled {
-					serviceInstallStatus.SetText(translations(lang)["serviceActive"])
+					serviceInstallStatus.SetText(i18n.Translations(lang)["serviceActive"])
 					serviceInstallButton.Disable()
 				} else {
-					serviceInstallStatus.SetText(translations(lang)["serviceInactive"])
+					serviceInstallStatus.SetText(i18n.Translations(lang)["serviceInactive"])
 					serviceInstallButton.Enable()
 				}
 			})
@@ -228,7 +234,7 @@ func Run() error {
 	topRight := widget.NewLabel("Ubuntu · GNOME Wayland")
 	headerRight := container.NewHBox(languageSelect, topRight)
 	headerRow := container.NewBorder(nil, nil, nil, headerRight, header)
-	githubStatus := widget.NewLabel(translations(lang)["githubLoading"])
+	githubStatus := widget.NewLabel(i18n.Translations(lang)["githubLoading"])
 	var refreshGitHub func()
 	repoURL, _ := url.Parse("https://github.com/anonymous-writer/ProxiLens")
 	releasesURL, _ := url.Parse("https://github.com/anonymous-writer/ProxiLens/releases")
@@ -247,7 +253,7 @@ func Run() error {
 	)
 
 	applyLanguage = func(language string) {
-		t := translations(language)
+		t := i18n.Translations(language)
 		subtitle.SetText(t["subtitle"])
 		duoValue.SetText(t["duoReady"])
 		statusCard.Title, statusCard.Subtitle = t["statusTitle"], t["statusSubtitle"]
@@ -349,7 +355,7 @@ func Run() error {
 				}
 			}
 			fyne.Do(func() {
-				t := translations(lang)
+				t := i18n.Translations(lang)
 				message := t["githubReachable"]
 				if latest != "" {
 					message += t["githubLatest"] + latest
@@ -368,14 +374,14 @@ func Run() error {
 	refreshSession = func() {
 		s, e := session.Current()
 		if e != nil {
-			sessionValue.SetText(translations(lang)["sessionUnavailable"] + ": " + e.Error())
+			sessionValue.SetText(i18n.Translations(lang)["sessionUnavailable"] + ": " + e.Error())
 			return
 		}
-		lock := translations(lang)["unlocked"]
+		lock := i18n.Translations(lang)["unlocked"]
 		if s.Locked {
-			lock = translations(lang)["locked"]
+			lock = i18n.Translations(lang)["locked"]
 		}
-		sessionValue.SetText(fmt.Sprintf(translations(lang)["sessionFormat"], s.ID, lock, s.Type))
+		sessionValue.SetText(fmt.Sprintf(i18n.Translations(lang)["sessionFormat"], s.ID, lock, s.Type))
 	}
 	refreshSession()
 	refreshGitHub()
@@ -399,18 +405,6 @@ func Run() error {
 	return nil
 }
 
-func translations(language string) map[string]string {
-	all := map[string]map[string]string{
-		"de": {"subtitle": "Monitor für Sitzungen · Authelia & Duo", "statusTitle": "Systemstatus", "statusSubtitle": "Aktueller Zustand von ProxiLens", "settingsTitle": "Verbindungseinstellungen", "settingsSubtitle": "Zugangsdaten werden verschlüsselt gespeichert", "save": "Konfiguration speichern", "check": "Verbindung prüfen", "setupTitle": "Einrichtung", "setupSubtitle": "Einmalige Installation der GNOME-Erweiterung und des Hintergrunddienstes", "gnomeInstall": "GNOME-Erweiterung installieren", "serviceInstall": "Hintergrunddienst installieren", "server": "Authelia-Server", "username": "Benutzername", "password": "Passwort", "database": "Datenbankdatei", "session": "GNOME-Sitzung", "authelia": "Authelia", "duo": "Duo", "topRight": "Ubuntu · GNOME Wayland", "urlPlaceholder": "https://auth.example.com", "usernamePlaceholder": "Authelia-Benutzername", "passwordPlaceholder": "Leer lassen, um das gespeicherte Passwort beizubehalten", "gnomeEnabled": "Installiert und aktiviert", "notInstalled": "Nicht installiert", "serviceActive": "Aktiv · läuft unabhängig vom Einstellungsfenster", "serviceInactive": "Nicht installiert oder nicht aktiv", "gnomeInstalledDisabled": "Installiert, aber nicht aktiviert", "gnomeEnable": "GNOME-Erweiterung aktivieren", "checking": "Verbindung wird geprüft …", "connected": "Verbunden", "disconnected": "Nicht verbunden", "sessionUnavailable": "Nicht verfügbar", "locked": "Gesperrt", "unlocked": "Entsperrt", "sessionFormat": "Sitzung %s · %s · %s", "saveErrorDB": "Datenbankpfad darf nicht leer sein", "passwordNotSaved": "Passwort wurde nicht gespeichert", "installDownloading": "Aktueller ProxiLens-Code wird von GitHub geladen …", "installDownloadFailed": "GitHub-Download fehlgeschlagen", "installScriptMissing": "Installationsdatei fehlt im GitHub-Projekt", "installRunning": "Installation läuft …", "installFailed": "Installation fehlgeschlagen", "installSuccess": "Installation erfolgreich · Quelle: GitHub", "installDialog": "ProxiLens-Installation", "githubLoading": "GitHub-Status wird geladen …", "githubReachable": "GitHub erreichbar", "githubLatest": " · Neueste Version: ", "githubCI": " · Letzter erfolgreicher CI-Lauf: ", "githubUnavailable": "GitHub-Status derzeit nicht verfügbar", "footerActive": "Status: aktiv", "gnomeChecking": "Status wird geprüft …", "serviceChecking": "Status wird geprüft …", "duoReady": "Bereit · wartet auf GNOME-Sperrbildschirm"},
-		"en": {"subtitle": "Session monitor · Authelia & Duo", "statusTitle": "System status", "statusSubtitle": "Current ProxiLens status", "settingsTitle": "Connection settings", "settingsSubtitle": "Credentials are stored encrypted", "save": "Save configuration", "check": "Check connection", "setupTitle": "Setup", "setupSubtitle": "One-time installation of the GNOME extension and background service", "gnomeInstall": "Install GNOME extension", "serviceInstall": "Install background service", "server": "Authelia server", "username": "Username", "password": "Password", "database": "Database file", "session": "GNOME session", "authelia": "Authelia", "duo": "Duo", "topRight": "Ubuntu · GNOME Wayland", "urlPlaceholder": "https://auth.example.com", "usernamePlaceholder": "Authelia username", "passwordPlaceholder": "Leave empty to keep the saved password", "gnomeEnabled": "Installed and enabled", "notInstalled": "Not installed", "serviceActive": "Active · runs independently of the settings window", "serviceInactive": "Not installed or inactive", "gnomeInstalledDisabled": "Installed, but not enabled", "gnomeEnable": "Enable GNOME extension", "checking": "Checking connection …", "connected": "Connected", "disconnected": "Not connected", "sessionUnavailable": "Unavailable", "locked": "Locked", "unlocked": "Unlocked", "sessionFormat": "Session %s · %s · %s", "saveErrorDB": "Database path must not be empty", "passwordNotSaved": "Password was not saved", "installDownloading": "Downloading current ProxiLens source from GitHub …", "installDownloadFailed": "GitHub download failed", "installScriptMissing": "Installer script is missing from the GitHub project", "installRunning": "Installation in progress …", "installFailed": "Installation failed", "installSuccess": "Installation successful · source: GitHub", "installDialog": "ProxiLens installation", "githubLoading": "Loading GitHub status …", "githubReachable": "GitHub reachable", "githubLatest": " · Latest version: ", "githubCI": " · Last successful CI run: ", "githubUnavailable": "GitHub status is currently unavailable", "footerActive": "Status: active", "gnomeChecking": "Checking status …", "serviceChecking": "Checking status …", "duoReady": "Ready · waiting for GNOME lock screen"},
-		"es": {"subtitle": "Monitor de sesión · Authelia y Duo", "statusTitle": "Estado del sistema", "statusSubtitle": "Estado actual de ProxiLens", "settingsTitle": "Configuración de conexión", "settingsSubtitle": "Las credenciales se guardan cifradas", "save": "Guardar configuración", "check": "Comprobar conexión", "setupTitle": "Instalación", "setupSubtitle": "Instalación única de la extensión GNOME y del servicio en segundo plano", "gnomeInstall": "Instalar extensión GNOME", "serviceInstall": "Instalar servicio en segundo plano", "server": "Servidor Authelia", "username": "Nombre de usuario", "password": "Contraseña", "database": "Archivo de base de datos", "session": "Sesión GNOME", "authelia": "Authelia", "duo": "Duo", "topRight": "Ubuntu · GNOME Wayland", "urlPlaceholder": "https://auth.example.com", "usernamePlaceholder": "Usuario de Authelia", "passwordPlaceholder": "Déjelo vacío para conservar la contraseña guardada", "gnomeEnabled": "Instalada y activada", "notInstalled": "No instalada", "serviceActive": "Activa · funciona independientemente de la ventana de ajustes", "serviceInactive": "No instalada o inactiva", "gnomeInstalledDisabled": "Instalada, pero no activada", "gnomeEnable": "Activar extensión GNOME", "checking": "Comprobando la conexión …", "connected": "Conectado", "disconnected": "No conectado", "sessionUnavailable": "No disponible", "locked": "Bloqueada", "unlocked": "Desbloqueada", "sessionFormat": "Sesión %s · %s · %s", "saveErrorDB": "La ruta de la base de datos no puede estar vacía", "passwordNotSaved": "La contraseña no se guardó", "installDownloading": "Descargando el código actual de ProxiLens desde GitHub …", "installDownloadFailed": "Error al descargar desde GitHub", "installScriptMissing": "Falta el script de instalación en el proyecto de GitHub", "installRunning": "Instalación en curso …", "installFailed": "Error de instalación", "installSuccess": "Instalación correcta · origen: GitHub", "installDialog": "Instalación de ProxiLens", "githubLoading": "Cargando el estado de GitHub …", "githubReachable": "GitHub disponible", "githubLatest": " · Última versión: ", "githubCI": " · Última ejecución correcta de CI: ", "githubUnavailable": "El estado de GitHub no está disponible actualmente", "footerActive": "Estado: activo", "gnomeChecking": "Comprobando el estado …", "serviceChecking": "Comprobando el estado …", "duoReady": "Preparado · esperando la pantalla de bloqueo de GNOME"},
-	}
-	if t, ok := all[language]; ok {
-		return t
-	}
-	return all["de"]
-}
-
 func boldLabel(text string) *widget.Label {
 	return widget.NewLabelWithStyle(text, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 }
@@ -423,16 +417,16 @@ func field(label string, input fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewVBox(widget.NewLabelWithStyle(label, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), input)
 }
 func checkConnection(base string, target *widget.Label, language func() string) {
-	target.SetText(translations(language())["checking"])
+	target.SetText(i18n.Translations(language())["checking"])
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 		defer cancel()
 		result := authelia.Check(ctx, base)
 		fyne.Do(func() {
 			if result.Connected {
-				target.SetText(translations(language())["connected"] + " · " + result.Message)
+				target.SetText(i18n.Translations(language())["connected"] + " · " + result.Message)
 			} else {
-				target.SetText(translations(language())["disconnected"] + " · " + result.Message)
+				target.SetText(i18n.Translations(language())["disconnected"] + " · " + result.Message)
 			}
 		})
 	}()
@@ -451,7 +445,7 @@ func commandOutput(name string, args ...string) string {
 // the selected, version-controlled installer script. No local source checkout is
 // required; the running wake-agent remains independent of this UI process.
 func runGitHubInstaller(w fyne.Window, script string, status *widget.Label, button *widget.Button, refresh func(), language func() string) {
-	status.SetText(translations(language())["installDownloading"])
+	status.SetText(i18n.Translations(language())["installDownloading"])
 	button.Disable()
 
 	go func() {
@@ -462,37 +456,37 @@ func runGitHubInstaller(w fyne.Window, script string, status *widget.Label, butt
 		root, cleanup, err := downloadGitHubSource()
 		if err != nil {
 			fyne.Do(func() {
-				status.SetText(translations(language())["installDownloadFailed"])
+				status.SetText(i18n.Translations(language())["installDownloadFailed"])
 				dialog.ShowError(err, w)
 			})
 			return
 		}
 		defer cleanup()
 
-		scriptPath := filepath.Join(root, "deploy", script)
+		scriptPath := filepath.Join(root, "scripts", script)
 		if _, err := os.Stat(scriptPath); err != nil {
 			fyne.Do(func() {
-				status.SetText(translations(language())["installScriptMissing"])
-				dialog.ShowError(fmt.Errorf("GitHub-Quellarchiv enthält deploy/%s nicht: %w", script, err), w)
+				status.SetText(i18n.Translations(language())["installScriptMissing"])
+				dialog.ShowError(fmt.Errorf("GitHub-Quellarchiv enthält scripts/%s nicht: %w", script, err), w)
 			})
 			return
 		}
 
-		fyne.Do(func() { status.SetText(translations(language())["installRunning"]) })
+		fyne.Do(func() { status.SetText(i18n.Translations(language())["installRunning"]) })
 		cmd := exec.Command("bash", scriptPath)
 		cmd.Dir = root
 		out, runErr := cmd.CombinedOutput()
 
 		fyne.Do(func() {
 			if runErr != nil {
-				status.SetText(translations(language())["installFailed"])
+				status.SetText(i18n.Translations(language())["installFailed"])
 				dialog.ShowError(fmt.Errorf("%s\n%s", runErr, strings.TrimSpace(string(out))), w)
 				return
 			}
-			status.SetText(translations(language())["installSuccess"])
+			status.SetText(i18n.Translations(language())["installSuccess"])
 			refresh()
 			if strings.TrimSpace(string(out)) != "" {
-				dialog.ShowInformation(translations(language())["installDialog"], strings.TrimSpace(string(out)), w)
+				dialog.ShowInformation(i18n.Translations(language())["installDialog"], strings.TrimSpace(string(out)), w)
 			}
 		})
 	}()
@@ -648,11 +642,11 @@ func downloadGitHubSource() (string, func(), error) {
 		}
 	}
 
-	if _, err := os.Stat(filepath.Join(extractRoot, "deploy", "install-gnome-extension.sh")); err != nil {
+	if _, err := os.Stat(filepath.Join(extractRoot, "scripts", "install-gnome-extension.sh")); err != nil {
 		cleanup()
 		return "", func() {}, fmt.Errorf("Im GitHub-Quellarchiv fehlt das GNOME-Installationsskript")
 	}
-	if _, err := os.Stat(filepath.Join(extractRoot, "deploy", "install-wake-agent.sh")); err != nil {
+	if _, err := os.Stat(filepath.Join(extractRoot, "scripts", "install-wake-agent.sh")); err != nil {
 		cleanup()
 		return "", func() {}, fmt.Errorf("Im GitHub-Quellarchiv fehlt das Wake-Agent-Installationsskript")
 	}

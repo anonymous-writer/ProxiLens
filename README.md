@@ -126,6 +126,30 @@ The application supports three interface languages:
 
 The selected language is saved in the application preferences.
 
+## Project structure
+
+The repository follows the shared organizational layout used across the
+project family, with ProxiLens-specific components retained where needed:
+
+- `main.go` starts the desktop UI; `cmd/proxilens-wake-agent/` contains the independent background agent.
+- `internal/app/` contains the desktop application.
+- `internal/authelia/`, `internal/configstore/`, and `internal/session/` contain the domain logic.
+- `internal/i18n/` loads all interface translations from one embedded JSON catalog.
+- `static/` contains the application logo and icon artwork.
+- `gnome-extension/` contains the GNOME Shell extension.
+- `scripts/` contains installation scripts and the systemd user service.
+- `docs/` contains project documentation and screenshots.
+- `.github/` contains issue templates and CI/release workflows.
+
+## Adding or changing interface languages
+
+All desktop UI strings are maintained in `internal/i18n/translations.json`.
+Each top-level property is a language code (`de`, `en`, `es`, etc.). To add
+a language, add a new object with the same translation keys, including
+`languageLabel` (the name shown in the language selector). The selector is
+populated automatically from this catalog; no UI code change is required.
+The JSON catalog is embedded into the executable at build time.
+
 ## Linux architectures
 
 The project supports these Linux architectures when the corresponding
@@ -175,8 +199,8 @@ If you have cloned or extracted the project, open a terminal in the
 project directory and run:
 
 ``` bash
-bash deploy/install-wake-agent.sh
-bash deploy/install-gnome-extension.sh
+bash scripts/install-wake-agent.sh
+bash scripts/install-gnome-extension.sh
 systemctl --user restart proxilens-wake-agent.service
 ```
 
@@ -211,7 +235,7 @@ binaries from the repository root:
 
 ``` bash
 mkdir -p dist
-go build -trimpath -o dist/proxilens-ui ./cmd/proxilens-ui
+go build -trimpath -o dist/proxilens-ui .
 go build -trimpath -o dist/proxilens-wake-agent ./cmd/proxilens-wake-agent
 ```
 

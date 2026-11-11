@@ -6,7 +6,7 @@ command -v dbus-monitor >/dev/null || { echo "dbus-monitor fehlt. Installiere db
 mkdir -p "$HOME/.local/bin" "$HOME/.config/systemd/user"
 cd "$ROOT"
 go build -trimpath -o "$HOME/.local/bin/proxilens-wake-agent" ./cmd/proxilens-wake-agent
-install -m 0644 "$ROOT/deploy/systemd/proxilens-wake-agent.service" "$HOME/.config/systemd/user/"
+install -m 0644 "$ROOT/scripts/systemd/proxilens-wake-agent.service" "$HOME/.config/systemd/user/"
 systemctl --user daemon-reload
 systemctl --user enable --now proxilens-wake-agent.service
 echo "Wake-Agent mit Sleep/Wake-, GNOME-Sperrstatus- und Duo-Zustandsüberwachung installiert."
