@@ -34,12 +34,12 @@ handle the authentication request and session-unlock workflow.
   <img
     src="https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/AppleWatch.png"
     alt="ProxiLens Apple Watch screenshot"
-    width="48%">
+    width="30%">
   &nbsp;
   <img
     src="https://raw.githubusercontent.com/anonymous-writer/ProxiLens/main/docs/iPhone.png"
     alt="ProxiLens iPhone screenshot"
-    width="48%">
+    width="30%">
 </p>
 
 <p align="center">
