@@ -397,5 +397,3 @@ only the online repository status is unavailable.
 ProxiLens is licensed under the [MIT License](LICENSE).
 
 Copyright (c) 2026 Michael Wlotkowski.
-Der Workflow baut nur für AMD64, veröffentlicht nichts als GitHub-Release und
-behält das Build-Artefakt 14 Tage. Die Go-Tests laufen vor dem Paketbau.
