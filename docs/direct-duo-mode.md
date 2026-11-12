@@ -21,3 +21,8 @@ Der Duo Secret Key gehört ausschließlich in die lokale Anwendung. Niemals in G
 - Danach den GNOME-Button testen und die Duo-Mobile-Anfrage bestätigen/ablehnen.
 - `go test ./...` und den manuellen AMD64-DEB-Workflow ausführen.
 - Vor produktivem Einsatz die Duo-API-Integration und die Desktop-Unlock-Semantik auf der Ziel-GNOME-Version prüfen.
+
+
+## Signierung
+
+Die Duo-Anbindung verwendet die von Duo empfohlene v5-Signierung (HMAC-SHA512). POST-Anfragen werden als kompaktes JSON gesendet; GET-Parameter werden RFC-3986-konform in der URL kodiert. Dies entspricht dem aktuellen Standard der offiziellen Duo-API-Clients. Die ältere v2/HMAC-SHA1-Signierung wird nicht mehr verwendet.
