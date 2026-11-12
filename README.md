@@ -397,18 +397,5 @@ only the online repository status is unavailable.
 ProxiLens is licensed under the [MIT License](LICENSE).
 
 Copyright (c) 2026 Michael Wlotkowski.
-
-## Manuelles Test-DEB (AMD64)
-
-Für Tests auf einem separaten Branch gibt es den GitHub-Actions-Workflow
-`.github/workflows/test-deb-amd64.yml`. Er verändert den Release-Workflow nicht
-und wird ausschließlich manuell gestartet:
-
-1. Änderungen auf den gewünschten Test-Branch pushen.
-2. Im GitHub-Repository **Actions → Test DEB (AMD64)** öffnen.
-3. **Run workflow** wählen und den Test-Branch auswählen.
-4. Nach erfolgreichem Lauf das Artefakt `proxilens-test-deb-amd64-*`
-   herunterladen. Es enthält das `.deb` und eine SHA-256-Prüfsummendatei.
-
 Der Workflow baut nur für AMD64, veröffentlicht nichts als GitHub-Release und
 behält das Build-Artefakt 14 Tage. Die Go-Tests laufen vor dem Paketbau.
