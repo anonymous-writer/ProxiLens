@@ -28,6 +28,10 @@ type Settings struct {
 	AutheliaURL  string
 	Username     string
 	Password     string
+	DuoIKey      string
+	DuoSKey      string
+	DuoHost      string
+	DuoUsername  string
 }
 
 type Store struct {
@@ -119,6 +123,16 @@ func (s *Store) Load() (Settings, error) {
 			return cfg, fmt.Errorf("gespeichertes Passwort kann nicht entschlüsselt werden: %w", err)
 		}
 	}
+	for key, target := range map[string]*string{"duo_ikey": &cfg.DuoIKey, "duo_skey": &cfg.DuoSKey, "duo_host": &cfg.DuoHost, "duo_username": &cfg.DuoUsername} {
+		var n, c string
+		e := s.db.QueryRow(`SELECT nonce,ciphertext FROM credentials WHERE key=?`, key).Scan(&n, &c)
+		if e == nil {
+			*target, e = decrypt(c, n)
+		}
+		if e != nil && !errors.Is(e, sql.ErrNoRows) {
+			return cfg, fmt.Errorf("Duo-Einstellung %s: %w", key, e)
+		}
+	}
 	if cfg.AuthMode == "" {
 		cfg.AuthMode = "authelia"
 	}
@@ -134,6 +148,10 @@ func (s *Store) Save(cfg Settings) error {
 	if cfg.AuthMode == "authelia" && (cfg.AutheliaURL == "" || cfg.Username == "") {
 		return errors.New("Authelia-Adresse und Benutzername sind erforderlich")
 	}
+	cfg.DuoIKey, cfg.DuoSKey, cfg.DuoHost, cfg.DuoUsername = strings.TrimSpace(cfg.DuoIKey), strings.TrimSpace(cfg.DuoSKey), strings.TrimSpace(cfg.DuoHost), strings.TrimSpace(cfg.DuoUsername)
+	if cfg.AuthMode == "duo" && (cfg.DuoIKey == "" || cfg.DuoSKey == "" || cfg.DuoHost == "" || cfg.DuoUsername == "") {
+		return errors.New("Duo IKEY, SKEY, API Hostname und Benutzername sind erforderlich")
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -142,6 +160,18 @@ func (s *Store) Save(cfg Settings) error {
 	for k, v := range map[string]string{"auth_mode": cfg.AuthMode, "authelia_url": cfg.AutheliaURL, "username": cfg.Username} {
 		if _, err = tx.Exec(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, k, v); err != nil {
 			return err
+		}
+	}
+	for key, value := range map[string]string{"duo_ikey": cfg.DuoIKey, "duo_skey": cfg.DuoSKey, "duo_host": cfg.DuoHost, "duo_username": cfg.DuoUsername} {
+		if value == "" {
+			continue
+		}
+		cipherText, nonce, e := encrypt(value)
+		if e != nil {
+			return e
+		}
+		if _, e = tx.Exec(`INSERT INTO credentials(key,nonce,ciphertext) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET nonce=excluded.nonce,ciphertext=excluded.ciphertext`, key, nonce, cipherText); e != nil {
+			return e
 		}
 	}
 	if cfg.Password != "" {

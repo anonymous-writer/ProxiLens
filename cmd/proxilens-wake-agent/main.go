@@ -16,6 +16,7 @@ import (
 
 	"github.com/local/proxilens/internal/authelia"
 	"github.com/local/proxilens/internal/configstore"
+	"github.com/local/proxilens/internal/duo"
 	"github.com/local/proxilens/internal/session"
 )
 
@@ -288,8 +289,11 @@ func authenticateAndUnlock(progress func(string), setState func(string), waitFor
 	if err != nil {
 		return err
 	}
-	if cfg.AutheliaURL == "" || cfg.Username == "" || cfg.Password == "" {
-		return fmtError("Authelia URL, Benutzername oder gespeichertes Passwort fehlt; bitte zuerst ProxiLens öffnen und Einstellungen prüfen")
+	if cfg.AuthMode == "authelia" && (cfg.AutheliaURL == "" || cfg.Username == "" || cfg.Password == "") {
+		return fmtError("Authelia URL, Benutzername oder gespeichertes Passwort fehlt; bitte Einstellungen prüfen")
+	}
+	if cfg.AuthMode == "duo" && (cfg.DuoIKey == "" || cfg.DuoSKey == "" || cfg.DuoHost == "" || cfg.DuoUsername == "") {
+		return fmtError("Duo-Zugangsdaten fehlen; bitte ProxiLens-Einstellungen prüfen")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -297,13 +301,24 @@ func authenticateAndUnlock(progress func(string), setState func(string), waitFor
 	// Let the HTTPS client connect immediately instead of adding a separate
 	// DNS/TCP preflight. After resume, retain the retry loop because networking
 	// may still be coming back online.
-	if waitForNetwork {
-		if err := waitForAutheliaNetwork(ctx, cfg.AutheliaURL); err != nil {
+	if cfg.AuthMode == "duo" {
+		if waitForNetwork {
+			if err := waitForDuoNetwork(ctx, cfg.DuoHost); err != nil {
+				return err
+			}
+		}
+		if err := (duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername}).Push(ctx, progress); err != nil {
 			return err
 		}
-	}
-	if err := authelia.AuthenticateDuo(ctx, cfg.AutheliaURL, cfg.Username, cfg.Password, progress); err != nil {
-		return err
+	} else {
+		if waitForNetwork {
+			if err := waitForAutheliaNetwork(ctx, cfg.AutheliaURL); err != nil {
+				return err
+			}
+		}
+		if err := authelia.AuthenticateDuo(ctx, cfg.AutheliaURL, cfg.Username, cfg.Password, progress); err != nil {
+			return err
+		}
 	}
 	setState("success")
 	// Re-check the exact session state immediately before unlocking.
@@ -403,4 +418,25 @@ func waitForAutheliaNetwork(ctx context.Context, rawURL string) error {
 		log.Printf("Authelia noch nicht erreichbar (Versuch %d/%d): %v", attempt+1, len(delays), dialErr)
 	}
 	return fmtError("Authelia nicht erreichbar: " + lastErr.Error())
+}
+
+func waitForDuoNetwork(ctx context.Context, host string) error {
+	address := net.JoinHostPort(strings.TrimSpace(host), "443")
+	for attempt := 0; attempt < 8; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(2 * time.Second):
+			}
+		}
+		dctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		conn, err := (&net.Dialer{}).DialContext(dctx, "tcp", address)
+		cancel()
+		if err == nil {
+			conn.Close()
+			return nil
+		}
+	}
+	return fmtError("Duo-API nach dem Aufwachen nicht erreichbar")
 }

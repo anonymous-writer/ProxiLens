@@ -28,6 +28,7 @@ import (
 
 	"github.com/local/proxilens/internal/authelia"
 	"github.com/local/proxilens/internal/configstore"
+	"github.com/local/proxilens/internal/duo"
 	"github.com/local/proxilens/internal/i18n"
 	"github.com/local/proxilens/internal/session"
 	staticassets "github.com/local/proxilens/static"
@@ -134,6 +135,13 @@ func Run() error {
 	userEntry.SetText(cfg.Username)
 	passEntry := widget.NewPasswordEntry()
 	passEntry.SetPlaceHolder("Leer lassen, um das gespeicherte Passwort beizubehalten")
+	duoIKeyEntry, duoSKeyEntry, duoHostEntry, duoUserEntry := widget.NewEntry(), widget.NewPasswordEntry(), widget.NewEntry(), widget.NewEntry()
+	duoIKeyEntry.SetText(cfg.DuoIKey)
+	duoHostEntry.SetText(cfg.DuoHost)
+	duoUserEntry.SetText(cfg.DuoUsername)
+	duoSKeyEntry.SetPlaceHolder("Leer lassen, um den gespeicherten Secret Key beizubehalten")
+	duoHostEntry.SetPlaceHolder("api-xxxxxxxx.duosecurity.com")
+	duoUserEntry.SetPlaceHolder("Duo-Benutzername, z. B. wl_michael")
 	dbEntry := widget.NewEntry()
 	dbEntry.SetText(dbPath)
 
@@ -161,7 +169,11 @@ func Run() error {
 		if authModeSelect.Selected == "Direkt mit Duo Push" {
 			selectedMode = "duo"
 		}
-		nextCfg := configstore.Settings{AuthMode: selectedMode, AutheliaURL: strings.TrimSpace(urlEntry.Text), Username: strings.TrimSpace(userEntry.Text), Password: password}
+		duoSecret := strings.TrimSpace(duoSKeyEntry.Text)
+		if duoSecret == "" && filepath.Clean(newPath) == filepath.Clean(dbPath) {
+			duoSecret = cfg.DuoSKey
+		}
+		nextCfg := configstore.Settings{AuthMode: selectedMode, AutheliaURL: strings.TrimSpace(urlEntry.Text), Username: strings.TrimSpace(userEntry.Text), Password: password, DuoIKey: strings.TrimSpace(duoIKeyEntry.Text), DuoSKey: duoSecret, DuoHost: strings.TrimSpace(duoHostEntry.Text), DuoUsername: strings.TrimSpace(duoUserEntry.Text)}
 		if e = next.Save(nextCfg); e != nil {
 			next.Close()
 			dialog.ShowError(e, w)
@@ -177,6 +189,10 @@ func Run() error {
 			dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["passwordNotSaved"]), w)
 			return
 		}
+		if loaded.AuthMode == "duo" && loaded.DuoSKey == "" {
+			dialog.ShowError(fmt.Errorf("Duo Secret Key konnte nicht gespeichert werden"), w)
+			return
+		}
 		cfg, dbPath = loaded, newPath
 		a.Preferences().SetString("database_path", dbPath)
 		passEntry.SetText("")
@@ -184,7 +200,7 @@ func Run() error {
 		if cfg.AuthMode == "authelia" {
 			checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
 		} else {
-			authValue.SetText("Direkter Duo-Modus ausgewählt · Integration noch nicht aktiviert")
+			authValue.SetText("Direkte Duo-API konfiguriert")
 		}
 	})
 	autheliaFields := container.NewVBox(
@@ -193,11 +209,12 @@ func Run() error {
 		container.NewVBox(passwordName, passEntry),
 	)
 	duoFields := container.NewVBox(
-		widget.NewSeparator(),
-		widget.NewLabelWithStyle("Direkte Duo-Anbindung", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		widget.NewLabel("Dieser Modus ist vorbereitet. Die direkte Duo-API-Authentifizierung ist in diesem Entwicklungsstand noch nicht implementiert."),
-		widget.NewLabel("Benötigt werden später: Duo Integration Key, Secret Key und API Hostname."),
-		widget.NewLabel("Bis zur Implementierung bleibt die Entsperrung in diesem Modus deaktiviert."),
+		widget.NewSeparator(), widget.NewLabelWithStyle("Direkte Duo-Anbindung", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabel("Duo Integration Key (IKEY)"), duoIKeyEntry,
+		widget.NewLabel("Duo Secret Key (SKEY)"), duoSKeyEntry,
+		widget.NewLabel("Duo API Hostname"), duoHostEntry,
+		widget.NewLabel("Duo-Benutzername"), duoUserEntry,
+		widget.NewLabel("Der Secret Key wird verschlüsselt mit einem Schlüssel aus dem GNOME-Schlüsselbund gespeichert."),
 	)
 	settingsFields := container.NewVBox()
 	refreshAuthFields := func() {
@@ -221,7 +238,20 @@ func Run() error {
 
 	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() {
 		if cfg.AuthMode == "duo" {
-			dialog.ShowInformation("Direktes Duo", "Die direkte Duo-API-Prüfung ist in diesem Entwicklungsstand noch nicht verfügbar.", w)
+			go func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+				defer cancel()
+				err := (duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername}).Check(ctx)
+				fyne.Do(func() {
+					if err != nil {
+						authValue.SetText("Duo-Verbindung fehlgeschlagen: " + err.Error())
+						dialog.ShowError(err, w)
+					} else {
+						authValue.SetText("Duo Auth API erreichbar · Zugangsdaten gültig")
+						dialog.ShowInformation("Duo-Verbindung", "Duo Auth API erfolgreich geprüft. Es wurde keine Push-Nachricht gesendet.", w)
+					}
+				})
+			}()
 			return
 		}
 		checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
@@ -380,7 +410,11 @@ func Run() error {
 			githubStatus.SetText(t["githubLoading"])
 			refreshGitHub()
 		}
-		checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
+		if cfg.AuthMode == "authelia" {
+			checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
+		} else {
+			authValue.SetText("Direkte Duo-API konfiguriert")
+		}
 		for _, obj := range []fyne.CanvasObject{
 			statusCard, settingsCard, setupCard, headerRow, footer,
 			subtitle, languageSelect, topRight, sessionValue, authValue, duoValue,
