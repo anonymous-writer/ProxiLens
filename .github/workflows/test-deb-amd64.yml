@@ -1,0 +1,71 @@
+name: Test DEB (AMD64)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-deb-amd64-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-deb:
+    name: Build test DEB (amd64)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out selected branch
+        uses: actions/checkout@v4
+
+      - name: Install Debian build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            debhelper \
+            dpkg-dev \
+            pkg-config \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            xorg-dev \
+            libwayland-dev \
+            libxkbcommon-dev \
+            wayland-protocols
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download Go dependencies
+        run: go mod download
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Build AMD64 Debian package
+        run: |
+          set -euo pipefail
+          dpkg-buildpackage -us -uc -b -d
+
+          VERSION="$(dpkg-parsechangelog --show-field Version)"
+          ARCH="$(dpkg --print-architecture)"
+          PACKAGE="../proxilens_${VERSION}_${ARCH}.deb"
+
+          test "$ARCH" = "amd64"
+          test -f "$PACKAGE"
+          mkdir -p dist
+          cp "$PACKAGE" "dist/ProxiLens-test-${VERSION}-amd64.deb"
+          sha256sum "dist/ProxiLens-test-${VERSION}-amd64.deb" \
+            > "dist/ProxiLens-test-${VERSION}-amd64.deb.sha256"
+          dpkg-deb --info "dist/ProxiLens-test-${VERSION}-amd64.deb"
+
+      - name: Upload test DEB
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxilens-test-deb-amd64-${{ github.run_number }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
