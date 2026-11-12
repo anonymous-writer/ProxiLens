@@ -1,6 +1,6 @@
 # ProxiLens
 
-**An experimental GNOME lock-screen integration for Authelia and Duo,
+**An experimental GNOME lock-screen integration with direct Duo authentication,
 with an optional Sleep/Wake user agent.**
 
 ProxiLens is a prototype for Ubuntu systems running GNOME Shell 50.x in
@@ -55,9 +55,9 @@ handle the authentication request and session-unlock workflow.
 -   The user must explicitly click the button to start the Duo workflow.
 -   The extension sends a `DuoUnlockRequested` signal to the ProxiLens
     user agent over the session D-Bus.
--   The agent loads the existing Authelia connection settings and stored
-    credentials from the ProxiLens configuration store.
--   The agent requests authentication through Authelia and Duo.
+-   The agent loads the Duo API settings and encrypted credentials from the
+    ProxiLens configuration store.
+-   The agent requests authentication directly through the Duo Auth API.
 -   After successful Duo confirmation, the agent verifies that the same
     active Wayland session is still locked.
 -   Only then does it request `loginctl unlock-session` for that
@@ -110,10 +110,19 @@ final locked-session checks are unchanged.
 ## Desktop settings application
 
 ProxiLens includes a Fyne-based desktop application for configuring the
-Authelia connection and viewing GNOME session, Authelia, Duo,
+Duo API connection and viewing GNOME session, Duo,
 installation, and GitHub status.
 
-The settings window is launched as a normal desktop application. It is
+The settings window is launched as a normal desktop application.
+
+### Direct Duo authentication
+
+The settings UI configures the Duo Auth API directly. The Integration Key,
+Secret Key, API Hostname, and Duo username are stored in the local SQLite
+credential store; secrets are encrypted with a key held in the GNOME keyring.
+The application has a single authentication path: direct Duo Push.
+
+ It is
 not required to remain open for the background agent to operate. The
 `proxilens-wake-agent.service` systemd user service runs independently
 of the settings window.
@@ -133,7 +142,7 @@ project family, with ProxiLens-specific components retained where needed:
 
 - `main.go` starts the desktop UI; `cmd/proxilens-wake-agent/` contains the independent background agent.
 - `internal/app/` contains the desktop application.
-- `internal/authelia/`, `internal/configstore/`, and `internal/session/` contain the domain logic.
+- `internal/duo/`, `internal/configstore/`, and `internal/session/` contain the domain logic.
 - `internal/i18n/` loads all interface translations from one embedded JSON catalog.
 - `static/` contains the application logo and icon artwork.
 - `gnome-extension/` contains the GNOME Shell extension.
@@ -171,9 +180,8 @@ assets available for a particular release.
 -   `systemd-logind`, `loginctl`, `dbus-monitor`, and `gdbus`.
 -   Go **1.27 or newer**, as specified by `go.mod`, when building from
     source or installing the agent from source.
--   An existing ProxiLens configuration containing the Authelia URL,
-    username, and stored Authelia password.
--   A reachable Authelia instance and a configured Duo second factor.
+-   A Duo Auth API integration with its IKEY, SKEY, API Hostname, and username.
+-   A reachable Duo Auth API integration and an enrolled Duo device.
 -   For the desktop UI build, the Linux development libraries required
     by Fyne (see the CI workflow for the Ubuntu package list).
 
@@ -319,7 +327,7 @@ before or after the final status notification.
 -   Pressing `Super+L` does not automatically start a Duo request; the
     user must explicitly click the Duo button.
 -   A GNOME status signal alone does not authorize an unlock. The agent
-    checks the Authelia/Duo result and the current logind lock status
+    checks the Duo result and the current logind lock status
     before requesting the unlock.
 
 ## Security and operational limitations
@@ -333,7 +341,7 @@ before or after the final status notification.
     The session D-Bus is not a system-wide privileged authentication
     broker.
 -   The agent requests `loginctl unlock-session` after successful
-    Authelia/Duo authentication and a locked-session check. This design
+    Duo authentication and a locked-session check. This design
     requires further security review before production use.
 -   The GNOME extension interacts with private GNOME Shell interfaces,
     including `Main.screenShield` and its dialog/clock widgets. GNOME
@@ -389,3 +397,18 @@ only the online repository status is unavailable.
 ProxiLens is licensed under the [MIT License](LICENSE).
 
 Copyright (c) 2026 Michael Wlotkowski.
+
+## Manuelles Test-DEB (AMD64)
+
+Für Tests auf einem separaten Branch gibt es den GitHub-Actions-Workflow
+`.github/workflows/test-deb-amd64.yml`. Er verändert den Release-Workflow nicht
+und wird ausschließlich manuell gestartet:
+
+1. Änderungen auf den gewünschten Test-Branch pushen.
+2. Im GitHub-Repository **Actions → Test DEB (AMD64)** öffnen.
+3. **Run workflow** wählen und den Test-Branch auswählen.
+4. Nach erfolgreichem Lauf das Artefakt `proxilens-test-deb-amd64-*`
+   herunterladen. Es enthält das `.deb` und eine SHA-256-Prüfsummendatei.
+
+Der Workflow baut nur für AMD64, veröffentlicht nichts als GitHub-Release und
+behält das Build-Artefakt 14 Tage. Die Go-Tests laufen vor dem Paketbau.

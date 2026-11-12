@@ -26,8 +26,8 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
-	"github.com/local/proxilens/internal/authelia"
 	"github.com/local/proxilens/internal/configstore"
+	"github.com/local/proxilens/internal/duo"
 	"github.com/local/proxilens/internal/i18n"
 	"github.com/local/proxilens/internal/session"
 	staticassets "github.com/local/proxilens/static"
@@ -79,7 +79,7 @@ func Run() error {
 	title := canvas.NewText("ProxiLens", theme.Color(theme.ColorNameForeground))
 	title.TextSize = 30
 	title.TextStyle.Bold = true
-	subtitle := widget.NewLabel("Session Monitor · Authelia & Duo")
+	subtitle := widget.NewLabel("Direkte Duo-Authentifizierung")
 	header := container.NewHBox(logoImage, container.NewVBox(title, subtitle))
 	var applyLanguage func(string)
 	var refreshSession func()
@@ -107,7 +107,7 @@ func Run() error {
 	authValue := widget.NewLabel(i18n.Translations(lang)["checking"])
 	duoValue := widget.NewLabel(i18n.Translations(lang)["duoReady"])
 	sessionName := boldLabel("GNOME session")
-	authName := boldLabel("Authelia")
+	authName := boldLabel("Duo API")
 	duoName := boldLabel("Duo")
 	statusCard := widget.NewCard("Systemstatus", "Aktueller Zustand von ProxiLens", container.NewVBox(
 		container.NewBorder(nil, nil, sessionName, nil, sessionValue),
@@ -115,20 +115,15 @@ func Run() error {
 		container.NewBorder(nil, nil, duoName, nil, duoValue),
 	))
 
-	urlEntry := widget.NewEntry()
-	urlEntry.SetPlaceHolder("https://auth.example.com")
-	urlEntry.SetText(cfg.AutheliaURL)
-	userEntry := widget.NewEntry()
-	userEntry.SetPlaceHolder("Authelia-Benutzername")
-	userEntry.SetText(cfg.Username)
-	passEntry := widget.NewPasswordEntry()
-	passEntry.SetPlaceHolder("Leer lassen, um das gespeicherte Passwort beizubehalten")
+	duoIKeyEntry, duoSKeyEntry, duoHostEntry, duoUserEntry := widget.NewEntry(), widget.NewPasswordEntry(), widget.NewEntry(), widget.NewEntry()
+	duoIKeyEntry.SetText(cfg.DuoIKey)
+	duoHostEntry.SetText(cfg.DuoHost)
+	duoUserEntry.SetText(cfg.DuoUsername)
+	duoSKeyEntry.SetPlaceHolder("Leer lassen, um den gespeicherten Secret Key beizubehalten")
+	duoHostEntry.SetPlaceHolder("api-xxxxxxxx.duosecurity.com")
+	duoUserEntry.SetPlaceHolder("Duo-Benutzername, z. B. wl_michael")
 	dbEntry := widget.NewEntry()
 	dbEntry.SetText(dbPath)
-
-	serverName := boldLabel("Authelia server")
-	usernameName := boldLabel("Username")
-	passwordName := boldLabel("Password")
 	databaseName := boldLabel("Database file")
 	saveStatus := widget.NewLabel("")
 	saveButton := widget.NewButtonWithIcon("Einstellungen speichern", theme.DocumentSaveIcon(), func() {
@@ -142,11 +137,14 @@ func Run() error {
 			dialog.ShowError(e, w)
 			return
 		}
-		password := passEntry.Text
-		if password == "" && filepath.Clean(newPath) == filepath.Clean(dbPath) {
-			password = cfg.Password
+		duoSecret := strings.TrimSpace(duoSKeyEntry.Text)
+		if duoSecret == "" && filepath.Clean(newPath) == filepath.Clean(dbPath) {
+			duoSecret = cfg.DuoSKey
 		}
-		nextCfg := configstore.Settings{AutheliaURL: strings.TrimSpace(urlEntry.Text), Username: strings.TrimSpace(userEntry.Text), Password: password}
+		nextCfg := configstore.Settings{
+			DuoIKey: strings.TrimSpace(duoIKeyEntry.Text), DuoSKey: duoSecret,
+			DuoHost: strings.TrimSpace(duoHostEntry.Text), DuoUsername: strings.TrimSpace(duoUserEntry.Text),
+		}
 		if e = next.Save(nextCfg); e != nil {
 			next.Close()
 			dialog.ShowError(e, w)
@@ -158,22 +156,42 @@ func Run() error {
 			dialog.ShowError(e, w)
 			return
 		}
-		if loaded.Password == "" {
-			dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["passwordNotSaved"]), w)
+		if loaded.DuoSKey == "" {
+			dialog.ShowError(fmt.Errorf("Duo Secret Key konnte nicht gespeichert werden"), w)
 			return
 		}
 		cfg, dbPath = loaded, newPath
 		a.Preferences().SetString("database_path", dbPath)
-		passEntry.SetText("")
+		duoSKeyEntry.SetText("")
 		saveStatus.SetText(i18n.Translations(lang)["saved"])
-		checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
+		authValue.SetText("Direkte Duo-API konfiguriert")
 	})
-	settingsCard := widget.NewCard("Verbindungseinstellungen", "Zugangsdaten werden verschlüsselt gespeichert", container.NewVBox(
-		container.NewVBox(serverName, urlEntry), container.NewVBox(usernameName, userEntry),
-		container.NewVBox(passwordName, passEntry), container.NewVBox(databaseName, dbEntry), saveButton, saveStatus,
-	))
-
-	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() { checkConnection(cfg.AutheliaURL, authValue, func() string { return lang }) })
+	duoFields := container.NewVBox(
+		widget.NewLabelWithStyle("Duo-Authentifizierung", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabel("Duo Integration Key (IKEY)"), duoIKeyEntry,
+		widget.NewLabel("Duo Secret Key (SKEY)"), duoSKeyEntry,
+		widget.NewLabel("Duo API Hostname"), duoHostEntry,
+		widget.NewLabel("Duo-Benutzername"), duoUserEntry,
+		widget.NewLabel("Der Secret Key wird verschlüsselt mit einem Schlüssel aus dem GNOME-Schlüsselbund gespeichert."),
+		widget.NewSeparator(), container.NewVBox(databaseName, dbEntry), saveButton, saveStatus,
+	)
+	settingsCard := widget.NewCard("Authentifizierung", "Direkte Duo-Push-Authentifizierung", duoFields)
+	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			err := (duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername}).Check(ctx)
+			fyne.Do(func() {
+				if err != nil {
+					authValue.SetText("Duo-Verbindung fehlgeschlagen: " + err.Error())
+					dialog.ShowError(err, w)
+				} else {
+					authValue.SetText("Duo Auth API erreichbar · Zugangsdaten gültig")
+					dialog.ShowInformation("Duo-Verbindung", "Duo Auth API erfolgreich geprüft. Es wurde keine Push-Nachricht gesendet.", w)
+				}
+			})
+		}()
+	})
 
 	// Installationseinrichtung: Die beiden Komponenten laufen unabhängig von diesem Fenster.
 	gnomeInstallStatus := widget.NewLabel(i18n.Translations(lang)["gnomeChecking"])
@@ -303,16 +321,10 @@ func Run() error {
 		gnomeInstallButton.SetText(t["gnomeInstall"])
 		serviceInstallButton.SetText(t["serviceInstall"])
 		topRight.SetText(t["topRight"])
-		serverName.SetText(t["server"])
-		usernameName.SetText(t["username"])
-		passwordName.SetText(t["password"])
 		databaseName.SetText(t["database"])
 		sessionName.SetText(t["session"])
-		authName.SetText(t["authelia"])
+		authName.SetText("Duo API")
 		duoName.SetText(t["duo"])
-		urlEntry.SetPlaceHolder(t["urlPlaceholder"])
-		userEntry.SetPlaceHolder(t["usernamePlaceholder"])
-		passEntry.SetPlaceHolder(t["passwordPlaceholder"])
 		if strings.TrimSpace(saveStatus.Text) != "" {
 			saveStatus.SetText(t["saved"])
 		}
@@ -328,11 +340,15 @@ func Run() error {
 			githubStatus.SetText(t["githubLoading"])
 			refreshGitHub()
 		}
-		checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
+		if cfg.DuoIKey != "" && cfg.DuoHost != "" && cfg.DuoUsername != "" {
+			authValue.SetText("Direkte Duo-API konfiguriert")
+		} else {
+			authValue.SetText("Duo API noch nicht konfiguriert")
+		}
 		for _, obj := range []fyne.CanvasObject{
 			statusCard, settingsCard, setupCard, headerRow, footer,
 			subtitle, languageSelect, topRight, sessionValue, authValue, duoValue,
-			sessionName, authName, duoName, serverName, usernameName, passwordName,
+			sessionName, authName, duoName,
 			databaseName, saveButton, saveStatus, checkButton,
 			gnomeInstallButton, gnomeInstallStatus, serviceInstallButton, serviceInstallStatus,
 			githubStatus,
@@ -431,7 +447,11 @@ func Run() error {
 			refreshGitHub()
 		}
 	}()
-	checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
+	if cfg.DuoIKey != "" && cfg.DuoHost != "" && cfg.DuoUsername != "" {
+		authValue.SetText("Direkte Duo-API konfiguriert")
+	} else {
+		authValue.SetText("Duo API noch nicht konfiguriert")
+	}
 	go func() {
 		ticker := time.NewTicker(4 * time.Second)
 		defer ticker.Stop()
@@ -455,22 +475,6 @@ func statusLine(label string, value *widget.Label) fyne.CanvasObject {
 func field(label string, input fyne.CanvasObject) fyne.CanvasObject {
 	return container.NewVBox(widget.NewLabelWithStyle(label, fyne.TextAlignLeading, fyne.TextStyle{Bold: true}), input)
 }
-func checkConnection(base string, target *widget.Label, language func() string) {
-	target.SetText(i18n.Translations(language())["checking"])
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
-		defer cancel()
-		result := authelia.Check(ctx, base)
-		fyne.Do(func() {
-			if result.Connected {
-				target.SetText(i18n.Translations(language())["connected"] + " · " + result.Message)
-			} else {
-				target.SetText(i18n.Translations(language())["disconnected"] + " · " + result.Message)
-			}
-		})
-	}()
-}
-
 func commandOutput(name string, args ...string) string {
 	cmd := exec.Command(name, args...)
 	out, err := cmd.CombinedOutput()
