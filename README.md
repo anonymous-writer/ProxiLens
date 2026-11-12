@@ -113,7 +113,19 @@ ProxiLens includes a Fyne-based desktop application for configuring the
 Authelia connection and viewing GNOME session, Authelia, Duo,
 installation, and GitHub status.
 
-The settings window is launched as a normal desktop application. It is
+The settings window is launched as a normal desktop application.
+
+### Authentication mode (development preview)
+
+The settings UI offers two selectable modes: **Authelia + Duo Push** and
+**Direct Duo Push**. The selected mode is persisted in the SQLite settings
+store. Existing Authelia URL, username, and encrypted password are retained
+when switching modes. The direct Duo mode is currently a UI/configuration
+preview only: direct Duo API authentication, credential storage, and agent
+routing are not implemented yet. Unlocking is therefore not available in
+that mode in this development snapshot.
+
+ It is
 not required to remain open for the background agent to operate. The
 `proxilens-wake-agent.service` systemd user service runs independently
 of the settings window.
@@ -389,3 +401,18 @@ only the online repository status is unavailable.
 ProxiLens is licensed under the [MIT License](LICENSE).
 
 Copyright (c) 2026 Michael Wlotkowski.
+
+## Manuelles Test-DEB (AMD64)
+
+Für Tests auf einem separaten Branch gibt es den GitHub-Actions-Workflow
+`.github/workflows/test-deb-amd64.yml`. Er verändert den Release-Workflow nicht
+und wird ausschließlich manuell gestartet:
+
+1. Änderungen auf den gewünschten Test-Branch pushen.
+2. Im GitHub-Repository **Actions → Test DEB (AMD64)** öffnen.
+3. **Run workflow** wählen und den Test-Branch auswählen.
+4. Nach erfolgreichem Lauf das Artefakt `proxilens-test-deb-amd64-*`
+   herunterladen. Es enthält das `.deb` und eine SHA-256-Prüfsummendatei.
+
+Der Workflow baut nur für AMD64, veröffentlicht nichts als GitHub-Release und
+behält das Build-Artefakt 14 Tage. Die Go-Tests laufen vor dem Paketbau.

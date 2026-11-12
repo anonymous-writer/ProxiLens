@@ -23,6 +23,7 @@ const serviceName = "de.local.proxilens"
 const keyAccount = "database-encryption-key-v1"
 
 type Settings struct {
+	AuthMode     string
 	DatabasePath string
 	AutheliaURL  string
 	Username     string
@@ -96,6 +97,8 @@ func (s *Store) Load() (Settings, error) {
 			return cfg, err
 		}
 		switch k {
+		case "auth_mode":
+			cfg.AuthMode = v
 		case "authelia_url":
 			cfg.AutheliaURL = v
 		case "username":
@@ -116,13 +119,19 @@ func (s *Store) Load() (Settings, error) {
 			return cfg, fmt.Errorf("gespeichertes Passwort kann nicht entschlüsselt werden: %w", err)
 		}
 	}
+	if cfg.AuthMode == "" {
+		cfg.AuthMode = "authelia"
+	}
 	return cfg, nil
 }
 
 func (s *Store) Save(cfg Settings) error {
 	cfg.AutheliaURL = strings.TrimSpace(cfg.AutheliaURL)
+	if cfg.AuthMode != "duo" {
+		cfg.AuthMode = "authelia"
+	}
 	cfg.Username = strings.TrimSpace(cfg.Username)
-	if cfg.AutheliaURL == "" || cfg.Username == "" {
+	if cfg.AuthMode == "authelia" && (cfg.AutheliaURL == "" || cfg.Username == "") {
 		return errors.New("Authelia-Adresse und Benutzername sind erforderlich")
 	}
 	tx, err := s.db.Begin()
@@ -130,7 +139,7 @@ func (s *Store) Save(cfg Settings) error {
 		return err
 	}
 	defer tx.Rollback()
-	for k, v := range map[string]string{"authelia_url": cfg.AutheliaURL, "username": cfg.Username} {
+	for k, v := range map[string]string{"auth_mode": cfg.AuthMode, "authelia_url": cfg.AutheliaURL, "username": cfg.Username} {
 		if _, err = tx.Exec(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, k, v); err != nil {
 			return err
 		}

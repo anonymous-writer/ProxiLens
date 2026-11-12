@@ -115,6 +115,17 @@ func Run() error {
 		container.NewBorder(nil, nil, duoName, nil, duoValue),
 	))
 
+	authMode := cfg.AuthMode
+	if authMode == "" {
+		authMode = "authelia"
+	}
+	authModeSelect := widget.NewSelect([]string{"Authelia + Duo Push", "Direkt mit Duo Push"}, nil)
+	if authMode == "duo" {
+		authModeSelect.SetSelected("Direkt mit Duo Push")
+	} else {
+		authModeSelect.SetSelected("Authelia + Duo Push")
+	}
+
 	urlEntry := widget.NewEntry()
 	urlEntry.SetPlaceHolder("https://auth.example.com")
 	urlEntry.SetText(cfg.AutheliaURL)
@@ -146,7 +157,11 @@ func Run() error {
 		if password == "" && filepath.Clean(newPath) == filepath.Clean(dbPath) {
 			password = cfg.Password
 		}
-		nextCfg := configstore.Settings{AutheliaURL: strings.TrimSpace(urlEntry.Text), Username: strings.TrimSpace(userEntry.Text), Password: password}
+		selectedMode := "authelia"
+		if authModeSelect.Selected == "Direkt mit Duo Push" {
+			selectedMode = "duo"
+		}
+		nextCfg := configstore.Settings{AuthMode: selectedMode, AutheliaURL: strings.TrimSpace(urlEntry.Text), Username: strings.TrimSpace(userEntry.Text), Password: password}
 		if e = next.Save(nextCfg); e != nil {
 			next.Close()
 			dialog.ShowError(e, w)
@@ -158,7 +173,7 @@ func Run() error {
 			dialog.ShowError(e, w)
 			return
 		}
-		if loaded.Password == "" {
+		if loaded.AuthMode == "authelia" && loaded.Password == "" {
 			dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["passwordNotSaved"]), w)
 			return
 		}
@@ -166,14 +181,51 @@ func Run() error {
 		a.Preferences().SetString("database_path", dbPath)
 		passEntry.SetText("")
 		saveStatus.SetText(i18n.Translations(lang)["saved"])
+		if cfg.AuthMode == "authelia" {
+			checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
+		} else {
+			authValue.SetText("Direkter Duo-Modus ausgewählt · Integration noch nicht aktiviert")
+		}
+	})
+	autheliaFields := container.NewVBox(
+		widget.NewLabelWithStyle("Authelia-Verbindung", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		container.NewVBox(serverName, urlEntry), container.NewVBox(usernameName, userEntry),
+		container.NewVBox(passwordName, passEntry),
+	)
+	duoFields := container.NewVBox(
+		widget.NewSeparator(),
+		widget.NewLabelWithStyle("Direkte Duo-Anbindung", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
+		widget.NewLabel("Dieser Modus ist vorbereitet. Die direkte Duo-API-Authentifizierung ist in diesem Entwicklungsstand noch nicht implementiert."),
+		widget.NewLabel("Benötigt werden später: Duo Integration Key, Secret Key und API Hostname."),
+		widget.NewLabel("Bis zur Implementierung bleibt die Entsperrung in diesem Modus deaktiviert."),
+	)
+	settingsFields := container.NewVBox()
+	refreshAuthFields := func() {
+		settingsFields.Objects = nil
+		settingsFields.Add(widget.NewLabel("Authentifizierungsmodus"))
+		settingsFields.Add(authModeSelect)
+		if authModeSelect.Selected == "Direkt mit Duo Push" {
+			settingsFields.Add(duoFields)
+		} else {
+			settingsFields.Add(autheliaFields)
+		}
+		settingsFields.Add(widget.NewSeparator())
+		settingsFields.Add(container.NewVBox(databaseName, dbEntry))
+		settingsFields.Add(saveButton)
+		settingsFields.Add(saveStatus)
+		settingsFields.Refresh()
+	}
+	authModeSelect.OnChanged = func(_ string) { refreshAuthFields() }
+	refreshAuthFields()
+	settingsCard := widget.NewCard("Authentifizierung", "Modus auswählen · Einstellungen passen sich automatisch an", settingsFields)
+
+	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() {
+		if cfg.AuthMode == "duo" {
+			dialog.ShowInformation("Direktes Duo", "Die direkte Duo-API-Prüfung ist in diesem Entwicklungsstand noch nicht verfügbar.", w)
+			return
+		}
 		checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
 	})
-	settingsCard := widget.NewCard("Verbindungseinstellungen", "Zugangsdaten werden verschlüsselt gespeichert", container.NewVBox(
-		container.NewVBox(serverName, urlEntry), container.NewVBox(usernameName, userEntry),
-		container.NewVBox(passwordName, passEntry), container.NewVBox(databaseName, dbEntry), saveButton, saveStatus,
-	))
-
-	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() { checkConnection(cfg.AutheliaURL, authValue, func() string { return lang }) })
 
 	// Installationseinrichtung: Die beiden Komponenten laufen unabhängig von diesem Fenster.
 	gnomeInstallStatus := widget.NewLabel(i18n.Translations(lang)["gnomeChecking"])
@@ -431,7 +483,11 @@ func Run() error {
 			refreshGitHub()
 		}
 	}()
-	checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
+	if cfg.AuthMode == "duo" {
+		authValue.SetText("Direkter Duo-Modus ausgewählt · Integration noch nicht aktiviert")
+	} else {
+		checkConnection(cfg.AutheliaURL, authValue, func() string { return lang })
+	}
 	go func() {
 		ticker := time.NewTicker(4 * time.Second)
 		defer ticker.Stop()
