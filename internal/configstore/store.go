@@ -23,11 +23,7 @@ const serviceName = "de.local.proxilens"
 const keyAccount = "database-encryption-key-v1"
 
 type Settings struct {
-	AuthMode     string
 	DatabasePath string
-	AutheliaURL  string
-	Username     string
-	Password     string
 	DuoIKey      string
 	DuoSKey      string
 	DuoHost      string
@@ -101,27 +97,10 @@ func (s *Store) Load() (Settings, error) {
 			return cfg, err
 		}
 		switch k {
-		case "auth_mode":
-			cfg.AuthMode = v
-		case "authelia_url":
-			cfg.AutheliaURL = v
-		case "username":
-			cfg.Username = v
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return cfg, err
-	}
-	var nonceText, cipherText string
-	err = s.db.QueryRow(`SELECT nonce,ciphertext FROM credentials WHERE key='authelia_password'`).Scan(&nonceText, &cipherText)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return cfg, err
-	}
-	if err == nil {
-		cfg.Password, err = decrypt(cipherText, nonceText)
-		if err != nil {
-			return cfg, fmt.Errorf("gespeichertes Passwort kann nicht entschlüsselt werden: %w", err)
-		}
 	}
 	for key, target := range map[string]*string{"duo_ikey": &cfg.DuoIKey, "duo_skey": &cfg.DuoSKey, "duo_host": &cfg.DuoHost, "duo_username": &cfg.DuoUsername} {
 		var n, c string
@@ -133,23 +112,15 @@ func (s *Store) Load() (Settings, error) {
 			return cfg, fmt.Errorf("Duo-Einstellung %s: %w", key, e)
 		}
 	}
-	if cfg.AuthMode == "" {
-		cfg.AuthMode = "authelia"
-	}
 	return cfg, nil
 }
 
 func (s *Store) Save(cfg Settings) error {
-	cfg.AutheliaURL = strings.TrimSpace(cfg.AutheliaURL)
-	if cfg.AuthMode != "duo" {
-		cfg.AuthMode = "authelia"
-	}
-	cfg.Username = strings.TrimSpace(cfg.Username)
-	if cfg.AuthMode == "authelia" && (cfg.AutheliaURL == "" || cfg.Username == "") {
-		return errors.New("Authelia-Adresse und Benutzername sind erforderlich")
-	}
-	cfg.DuoIKey, cfg.DuoSKey, cfg.DuoHost, cfg.DuoUsername = strings.TrimSpace(cfg.DuoIKey), strings.TrimSpace(cfg.DuoSKey), strings.TrimSpace(cfg.DuoHost), strings.TrimSpace(cfg.DuoUsername)
-	if cfg.AuthMode == "duo" && (cfg.DuoIKey == "" || cfg.DuoSKey == "" || cfg.DuoHost == "" || cfg.DuoUsername == "") {
+	cfg.DuoIKey = strings.TrimSpace(cfg.DuoIKey)
+	cfg.DuoSKey = strings.TrimSpace(cfg.DuoSKey)
+	cfg.DuoHost = strings.TrimSpace(cfg.DuoHost)
+	cfg.DuoUsername = strings.TrimSpace(cfg.DuoUsername)
+	if cfg.DuoIKey == "" || cfg.DuoSKey == "" || cfg.DuoHost == "" || cfg.DuoUsername == "" {
 		return errors.New("Duo IKEY, SKEY, API Hostname und Benutzername sind erforderlich")
 	}
 	tx, err := s.db.Begin()
@@ -157,30 +128,13 @@ func (s *Store) Save(cfg Settings) error {
 		return err
 	}
 	defer tx.Rollback()
-	for k, v := range map[string]string{"auth_mode": cfg.AuthMode, "authelia_url": cfg.AutheliaURL, "username": cfg.Username} {
-		if _, err = tx.Exec(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, k, v); err != nil {
-			return err
-		}
-	}
 	for key, value := range map[string]string{"duo_ikey": cfg.DuoIKey, "duo_skey": cfg.DuoSKey, "duo_host": cfg.DuoHost, "duo_username": cfg.DuoUsername} {
-		if value == "" {
-			continue
-		}
 		cipherText, nonce, e := encrypt(value)
 		if e != nil {
 			return e
 		}
 		if _, e = tx.Exec(`INSERT INTO credentials(key,nonce,ciphertext) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET nonce=excluded.nonce,ciphertext=excluded.ciphertext`, key, nonce, cipherText); e != nil {
 			return e
-		}
-	}
-	if cfg.Password != "" {
-		cipherText, nonce, err := encrypt(cfg.Password)
-		if err != nil {
-			return err
-		}
-		if _, err = tx.Exec(`INSERT INTO credentials(key,nonce,ciphertext) VALUES('authelia_password',?,?) ON CONFLICT(key) DO UPDATE SET nonce=excluded.nonce,ciphertext=excluded.ciphertext`, nonce, cipherText); err != nil {
-			return err
 		}
 	}
 	return tx.Commit()
@@ -225,7 +179,7 @@ func encrypt(plain string) (string, string, error) {
 	if _, err = rand.Read(nonce); err != nil {
 		return "", "", err
 	}
-	sealed := gcm.Seal(nil, nonce, []byte(plain), []byte("proxilens:authelia_password:v1"))
+	sealed := gcm.Seal(nil, nonce, []byte(plain), []byte("proxilens:credential:v1"))
 	return base64.StdEncoding.EncodeToString(sealed), base64.StdEncoding.EncodeToString(nonce), nil
 }
 func decrypt(cipherText, nonceText string) (string, error) {
@@ -249,7 +203,7 @@ func decrypt(cipherText, nonceText string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	plain, err := gcm.Open(nil, nonce, sealed, []byte("proxilens:authelia_password:v1"))
+	plain, err := gcm.Open(nil, nonce, sealed, []byte("proxilens:credential:v1"))
 	if err != nil {
 		return "", err
 	}

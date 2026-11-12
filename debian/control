@@ -10,7 +10,7 @@ Homepage: https://github.com/anonymous-writer/ProxiLens
 Package: proxilens
 Architecture: any
 Depends: ${shlibs:Depends}, ${misc:Depends}, dbus-bin, gnome-shell, libgl1, libegl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libwayland-client0, libxkbcommon0, libsecret-1-0
-Description: GNOME lock-screen integration for Authelia and Duo
+Description: GNOME lock-screen integration with direct Duo authentication
  ProxiLens provides a desktop settings application, a user-session
  wake agent, and a GNOME Shell extension for an explicit Duo unlock
  action on supported GNOME Wayland sessions.

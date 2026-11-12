@@ -1,9 +1,6 @@
-# Direkter Duo-Push-Modus
+# Direkte Duo-Push-Authentifizierung
 
-ProxiLens unterstützt zwei Modi:
-
-- `authelia`: bisheriger Ablauf über Authelia und dessen Duo-Zweitfaktor.
-- `duo`: direkte Duo Auth API-Anfrage aus dem Wake-Agent.
+ProxiLens verwendet ausschließlich die direkte Duo Auth API.
 
 ## Einrichtung
 

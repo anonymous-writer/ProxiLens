@@ -3,7 +3,7 @@
   <id>proxilens.desktop</id>
 
   <name>ProxiLens</name>
-  <summary>Monitor für Sitzungen – Authelia &amp; Duo</summary>
+  <summary>Monitor für Sitzungen – direkte Duo-Authentifizierung</summary>
 
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
@@ -11,7 +11,7 @@
   <description>
     <p>
       ProxiLens provides a desktop settings application, a GNOME Shell
-      extension and a user-session wake agent for Authelia and Duo integration.
+      extension and a user-session wake agent for direct Duo integration.
     </p>
   </description>
 
