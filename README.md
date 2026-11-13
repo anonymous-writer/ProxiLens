@@ -384,14 +384,6 @@ Actions are available in the application footer.
 If GitHub cannot be reached, the desktop application continues to work;
 only the online repository status is unavailable.
 
-## Further documentation
-
--   [Alpha.7.3.1 --- Duo status and test
-    guide](README-ALPHA7.3-DUO-STATE.md)
--   [Alpha.7 --- GNOME Duo button](README-ALPHA7-DUO-BUTTON-TEST.md)
--   [Sleep/Wake test](README-ALPHA6-TEST.md)
--   [Configuration guide](README-KONFIGURATION.md)
-
 ## License
 
 ProxiLens is licensed under the [MIT License](LICENSE).
