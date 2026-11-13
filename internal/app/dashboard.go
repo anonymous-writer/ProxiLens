@@ -58,6 +58,13 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("Einstellungen laden: %w", err)
 	}
+	if cfg.DuoPushType == "" {
+		cfg.DuoPushType = i18n.Translations(lang)["duoPushType"]
+		if s, openErr := configstore.Open(dbPath); openErr == nil {
+			_ = s.SetDuoPushType(cfg.DuoPushType)
+			_ = s.Close()
+		}
+	}
 
 	logoBytes, err := staticassets.FS.ReadFile("wlm-logo.png")
 	if err != nil {
@@ -96,6 +103,11 @@ func Run() error {
 		if selected != "" {
 			lang = selected
 			a.Preferences().SetString("language", lang)
+			if store, err := configstore.Open(dbPath); err == nil {
+				_ = store.SetDuoPushType(i18n.Translations(lang)["duoPushType"])
+				_ = store.Close()
+			}
+			cfg.DuoPushType = i18n.Translations(lang)["duoPushType"]
 			if applyLanguage != nil {
 				applyLanguage(lang)
 			}
@@ -119,9 +131,9 @@ func Run() error {
 	duoIKeyEntry.SetText(cfg.DuoIKey)
 	duoHostEntry.SetText(cfg.DuoHost)
 	duoUserEntry.SetText(cfg.DuoUsername)
-	duoSKeyEntry.SetPlaceHolder("Leer lassen, um den gespeicherten Secret Key beizubehalten")
-	duoHostEntry.SetPlaceHolder("api-xxxxxxxx.duosecurity.com")
-	duoUserEntry.SetPlaceHolder("Duo-Benutzername, z. B. wl_michael")
+	duoSKeyEntry.SetPlaceHolder(i18n.Translations(lang)["duoSecretPlaceholder"])
+	duoHostEntry.SetPlaceHolder(i18n.Translations(lang)["duoHostPlaceholder"])
+	duoUserEntry.SetPlaceHolder(i18n.Translations(lang)["duoUserPlaceholder"])
 	dbEntry := widget.NewEntry()
 	dbEntry.SetText(dbPath)
 	databaseName := boldLabel("Database file")
@@ -144,6 +156,7 @@ func Run() error {
 		nextCfg := configstore.Settings{
 			DuoIKey: strings.TrimSpace(duoIKeyEntry.Text), DuoSKey: duoSecret,
 			DuoHost: strings.TrimSpace(duoHostEntry.Text), DuoUsername: strings.TrimSpace(duoUserEntry.Text),
+			DuoPushType: i18n.Translations(lang)["duoPushType"],
 		}
 		if e = next.Save(nextCfg); e != nil {
 			next.Close()
@@ -157,22 +170,26 @@ func Run() error {
 			return
 		}
 		if loaded.DuoSKey == "" {
-			dialog.ShowError(fmt.Errorf("Duo Secret Key konnte nicht gespeichert werden"), w)
+			dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["duoSaveKeyError"]), w)
 			return
 		}
 		cfg, dbPath = loaded, newPath
 		a.Preferences().SetString("database_path", dbPath)
 		duoSKeyEntry.SetText("")
 		saveStatus.SetText(i18n.Translations(lang)["saved"])
-		authValue.SetText("Direkte Duo-API konfiguriert")
+		authValue.SetText(i18n.Translations(lang)["authConfigured"])
 	})
+	duoAuthTitle := widget.NewLabelWithStyle(i18n.Translations(lang)["duoAuthTitle"], fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	duoIKeyLabel, duoSKeyLabel := widget.NewLabel(i18n.Translations(lang)["duoIKey"]), widget.NewLabel(i18n.Translations(lang)["duoSKey"])
+	duoHostLabel, duoUsernameLabel := widget.NewLabel(i18n.Translations(lang)["duoHost"]), widget.NewLabel(i18n.Translations(lang)["duoUsername"])
+	duoKeyHelp := widget.NewLabel(i18n.Translations(lang)["duoKeyHelp"])
 	duoFields := container.NewVBox(
-		widget.NewLabelWithStyle("Duo-Authentifizierung", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
-		widget.NewLabel("Duo Integration Key (IKEY)"), duoIKeyEntry,
-		widget.NewLabel("Duo Secret Key (SKEY)"), duoSKeyEntry,
-		widget.NewLabel("Duo API Hostname"), duoHostEntry,
-		widget.NewLabel("Duo-Benutzername"), duoUserEntry,
-		widget.NewLabel("Der Secret Key wird verschlüsselt mit einem Schlüssel aus dem GNOME-Schlüsselbund gespeichert."),
+		duoAuthTitle,
+		duoIKeyLabel, duoIKeyEntry,
+		duoSKeyLabel, duoSKeyEntry,
+		duoHostLabel, duoHostEntry,
+		duoUsernameLabel, duoUserEntry,
+		duoKeyHelp,
 		widget.NewSeparator(), container.NewVBox(databaseName, dbEntry), saveButton, saveStatus,
 	)
 	settingsCard := widget.NewCard("Authentifizierung", "Direkte Duo-Push-Authentifizierung", duoFields)
@@ -183,11 +200,11 @@ func Run() error {
 			err := (duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername}).Check(ctx)
 			fyne.Do(func() {
 				if err != nil {
-					authValue.SetText("Duo-Verbindung fehlgeschlagen: " + err.Error())
+					authValue.SetText(i18n.Translations(lang)["duoCheckFailed"] + err.Error())
 					dialog.ShowError(err, w)
 				} else {
-					authValue.SetText("Duo Auth API erreichbar · Zugangsdaten gültig")
-					dialog.ShowInformation("Duo-Verbindung", "Duo Auth API erfolgreich geprüft. Es wurde keine Push-Nachricht gesendet.", w)
+					authValue.SetText(i18n.Translations(lang)["duoCheckOK"])
+					dialog.ShowInformation(i18n.Translations(lang)["duoCheckDialogTitle"], i18n.Translations(lang)["duoCheckDialogOK"], w)
 				}
 			})
 		}()
@@ -325,6 +342,15 @@ func Run() error {
 		sessionName.SetText(t["session"])
 		authName.SetText("Duo API")
 		duoName.SetText(t["duo"])
+		duoAuthTitle.SetText(t["duoAuthTitle"])
+		duoIKeyLabel.SetText(t["duoIKey"])
+		duoSKeyLabel.SetText(t["duoSKey"])
+		duoHostLabel.SetText(t["duoHost"])
+		duoUsernameLabel.SetText(t["duoUsername"])
+		duoKeyHelp.SetText(t["duoKeyHelp"])
+		duoSKeyEntry.SetPlaceHolder(t["duoSecretPlaceholder"])
+		duoHostEntry.SetPlaceHolder(t["duoHostPlaceholder"])
+		duoUserEntry.SetPlaceHolder(t["duoUserPlaceholder"])
 		if strings.TrimSpace(saveStatus.Text) != "" {
 			saveStatus.SetText(t["saved"])
 		}
@@ -341,9 +367,9 @@ func Run() error {
 			refreshGitHub()
 		}
 		if cfg.DuoIKey != "" && cfg.DuoHost != "" && cfg.DuoUsername != "" {
-			authValue.SetText("Direkte Duo-API konfiguriert")
+			authValue.SetText(i18n.Translations(lang)["authConfigured"])
 		} else {
-			authValue.SetText("Duo API noch nicht konfiguriert")
+			authValue.SetText(i18n.Translations(lang)["authNotConfigured"])
 		}
 		for _, obj := range []fyne.CanvasObject{
 			statusCard, settingsCard, setupCard, headerRow, footer,
@@ -448,9 +474,9 @@ func Run() error {
 		}
 	}()
 	if cfg.DuoIKey != "" && cfg.DuoHost != "" && cfg.DuoUsername != "" {
-		authValue.SetText("Direkte Duo-API konfiguriert")
+		authValue.SetText(i18n.Translations(lang)["authConfigured"])
 	} else {
-		authValue.SetText("Duo API noch nicht konfiguriert")
+		authValue.SetText(i18n.Translations(lang)["authNotConfigured"])
 	}
 	go func() {
 		ticker := time.NewTicker(4 * time.Second)
