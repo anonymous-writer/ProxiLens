@@ -23,15 +23,12 @@ const serviceName = "de.local.proxilens"
 const keyAccount = "database-encryption-key-v1"
 
 type Settings struct {
-	DatabasePath  string
-	DuoIKey       string
-	DuoSKey       string
-	DuoHost       string
-	DuoUsername   string
-	DuoPushType   string
-	DuoPushTypeDE string
-	DuoPushTypeEN string
-	DuoPushTypeES string
+	DatabasePath string
+	DuoIKey      string
+	DuoSKey      string
+	DuoHost      string
+	DuoUsername  string
+	DuoPushType  string
 }
 
 type Store struct {
@@ -103,12 +100,6 @@ func (s *Store) Load() (Settings, error) {
 		switch k {
 		case "duo_push_type":
 			cfg.DuoPushType = v
-		case "duo_push_type_de":
-			cfg.DuoPushTypeDE = v
-		case "duo_push_type_en":
-			cfg.DuoPushTypeEN = v
-		case "duo_push_type_es":
-			cfg.DuoPushTypeES = v
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -150,10 +141,7 @@ func (s *Store) Save(cfg Settings) error {
 		}
 	}
 	for key, value := range map[string]string{
-		"duo_push_type":    cfg.DuoPushType,
-		"duo_push_type_de": cfg.DuoPushTypeDE,
-		"duo_push_type_en": cfg.DuoPushTypeEN,
-		"duo_push_type_es": cfg.DuoPushTypeES,
+		"duo_push_type": cfg.DuoPushType,
 	} {
 		if _, err = tx.Exec(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, strings.TrimSpace(value)); err != nil {
 			return err
@@ -162,7 +150,7 @@ func (s *Store) Save(cfg Settings) error {
 	return tx.Commit()
 }
 
-// SetDuoPushType stores the localized Duo notification type without rewriting credentials.
+// SetDuoPushType stores the single configurable Duo notification type without rewriting credentials.
 func (s *Store) SetDuoPushType(value string) error {
 	_, err := s.db.Exec(`INSERT INTO settings(key,value) VALUES('duo_push_type',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strings.TrimSpace(value))
 	return err

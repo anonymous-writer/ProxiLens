@@ -67,11 +67,9 @@
     "duoCheckDialogTitle": "Duo-Verbindung",
     "duoCheckDialogOK": "Duo Auth API erfolgreich geprüft. Es wurde keine Push-Nachricht gesendet.",
     "duoSaveKeyError": "Duo Secret Key konnte nicht gespeichert werden",
-    "duoPushTypeRequired": "Bitte gib einen Push-Text für alle drei Sprachen ein.",
+    "duoPushTypeRequired": "Bitte gib einen Push-Text ein.",
     "duoPushTextTitle": "Duo-Push-Text (frei anpassbar)",
-    "duoPushTextDE": "Deutsch",
-    "duoPushTextEN": "Englisch",
-    "duoPushTextES": "Spanisch"
+    "duoPushTextLabel": "Push-Bezeichnung"
   },
   "en": {
     "check": "Check connection",
@@ -141,11 +139,9 @@
     "duoCheckDialogTitle": "Duo connection",
     "duoCheckDialogOK": "Duo Auth API check successful. No push notification was sent.",
     "duoSaveKeyError": "Duo Secret Key could not be saved",
-    "duoPushTypeRequired": "Please enter a push text for all three languages.",
+    "duoPushTypeRequired": "Please enter a push text.",
     "duoPushTextTitle": "Duo push text (customizable)",
-    "duoPushTextDE": "German",
-    "duoPushTextEN": "English",
-    "duoPushTextES": "Spanish"
+    "duoPushTextLabel": "Push label"
   },
   "es": {
     "check": "Comprobar conexión",
@@ -215,10 +211,8 @@
     "duoCheckDialogTitle": "Conexión con Duo",
     "duoCheckDialogOK": "La API de Duo se ha comprobado correctamente. No se envió ninguna notificación push.",
     "duoSaveKeyError": "No se pudo guardar la clave secreta de Duo",
-    "duoPushTypeRequired": "Introduce un texto push para los tres idiomas.",
+    "duoPushTypeRequired": "Introduce un texto para la notificación.",
     "duoPushTextTitle": "Texto de Duo Push (personalizable)",
-    "duoPushTextDE": "Alemán",
-    "duoPushTextEN": "Inglés",
-    "duoPushTextES": "Español"
+    "duoPushTextLabel": "Texto de la notificación"
   }
 }
