@@ -23,12 +23,15 @@ const serviceName = "de.local.proxilens"
 const keyAccount = "database-encryption-key-v1"
 
 type Settings struct {
-	DatabasePath string
-	DuoIKey      string
-	DuoSKey      string
-	DuoHost      string
-	DuoUsername  string
-	DuoPushType  string
+	DatabasePath  string
+	DuoIKey       string
+	DuoSKey       string
+	DuoHost       string
+	DuoUsername   string
+	DuoPushType   string
+	DuoPushTypeDE string
+	DuoPushTypeEN string
+	DuoPushTypeES string
 }
 
 type Store struct {
@@ -100,6 +103,12 @@ func (s *Store) Load() (Settings, error) {
 		switch k {
 		case "duo_push_type":
 			cfg.DuoPushType = v
+		case "duo_push_type_de":
+			cfg.DuoPushTypeDE = v
+		case "duo_push_type_en":
+			cfg.DuoPushTypeEN = v
+		case "duo_push_type_es":
+			cfg.DuoPushTypeES = v
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -140,8 +149,15 @@ func (s *Store) Save(cfg Settings) error {
 			return e
 		}
 	}
-	if _, err = tx.Exec(`INSERT INTO settings(key,value) VALUES('duo_push_type',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strings.TrimSpace(cfg.DuoPushType)); err != nil {
-		return err
+	for key, value := range map[string]string{
+		"duo_push_type":    cfg.DuoPushType,
+		"duo_push_type_de": cfg.DuoPushTypeDE,
+		"duo_push_type_en": cfg.DuoPushTypeEN,
+		"duo_push_type_es": cfg.DuoPushTypeES,
+	} {
+		if _, err = tx.Exec(`INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, key, strings.TrimSpace(value)); err != nil {
+			return err
+		}
 	}
 	return tx.Commit()
 }

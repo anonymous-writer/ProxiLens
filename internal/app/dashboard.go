@@ -58,12 +58,30 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("Einstellungen laden: %w", err)
 	}
-	if cfg.DuoPushType == "" {
-		cfg.DuoPushType = i18n.Translations(lang)["duoPushType"]
-		if s, openErr := configstore.Open(dbPath); openErr == nil {
-			_ = s.SetDuoPushType(cfg.DuoPushType)
-			_ = s.Close()
+	defaults := map[string]string{"de": i18n.Translations("de")["duoPushType"], "en": i18n.Translations("en")["duoPushType"], "es": i18n.Translations("es")["duoPushType"]}
+	if cfg.DuoPushTypeDE == "" {
+		cfg.DuoPushTypeDE = defaults["de"]
+	}
+	if cfg.DuoPushTypeEN == "" {
+		cfg.DuoPushTypeEN = defaults["en"]
+	}
+	if cfg.DuoPushTypeES == "" {
+		cfg.DuoPushTypeES = defaults["es"]
+	}
+	activePushType := func(language string) string {
+		switch language {
+		case "en":
+			return cfg.DuoPushTypeEN
+		case "es":
+			return cfg.DuoPushTypeES
+		default:
+			return cfg.DuoPushTypeDE
 		}
+	}
+	cfg.DuoPushType = activePushType(lang)
+	if s, openErr := configstore.Open(dbPath); openErr == nil {
+		_ = s.SetDuoPushType(cfg.DuoPushType)
+		_ = s.Close()
 	}
 
 	logoBytes, err := staticassets.FS.ReadFile("wlm-logo.png")
@@ -103,11 +121,11 @@ func Run() error {
 		if selected != "" {
 			lang = selected
 			a.Preferences().SetString("language", lang)
+			cfg.DuoPushType = activePushType(lang)
 			if store, err := configstore.Open(dbPath); err == nil {
-				_ = store.SetDuoPushType(i18n.Translations(lang)["duoPushType"])
+				_ = store.SetDuoPushType(cfg.DuoPushType)
 				_ = store.Close()
 			}
-			cfg.DuoPushType = i18n.Translations(lang)["duoPushType"]
 			if applyLanguage != nil {
 				applyLanguage(lang)
 			}
@@ -134,6 +152,10 @@ func Run() error {
 	duoSKeyEntry.SetPlaceHolder(i18n.Translations(lang)["duoSecretPlaceholder"])
 	duoHostEntry.SetPlaceHolder(i18n.Translations(lang)["duoHostPlaceholder"])
 	duoUserEntry.SetPlaceHolder(i18n.Translations(lang)["duoUserPlaceholder"])
+	pushTypeDEEntry, pushTypeENEntry, pushTypeESEntry := widget.NewEntry(), widget.NewEntry(), widget.NewEntry()
+	pushTypeDEEntry.SetText(cfg.DuoPushTypeDE)
+	pushTypeENEntry.SetText(cfg.DuoPushTypeEN)
+	pushTypeESEntry.SetText(cfg.DuoPushTypeES)
 	dbEntry := widget.NewEntry()
 	dbEntry.SetText(dbPath)
 	databaseName := boldLabel("Database file")
@@ -153,10 +175,25 @@ func Run() error {
 		if duoSecret == "" && filepath.Clean(newPath) == filepath.Clean(dbPath) {
 			duoSecret = cfg.DuoSKey
 		}
+		if strings.TrimSpace(pushTypeDEEntry.Text) == "" || strings.TrimSpace(pushTypeENEntry.Text) == "" || strings.TrimSpace(pushTypeESEntry.Text) == "" {
+			dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["duoPushTypeRequired"]), w)
+			return
+		}
 		nextCfg := configstore.Settings{
 			DuoIKey: strings.TrimSpace(duoIKeyEntry.Text), DuoSKey: duoSecret,
 			DuoHost: strings.TrimSpace(duoHostEntry.Text), DuoUsername: strings.TrimSpace(duoUserEntry.Text),
-			DuoPushType: i18n.Translations(lang)["duoPushType"],
+			DuoPushType:   activePushType(lang),
+			DuoPushTypeDE: strings.TrimSpace(pushTypeDEEntry.Text),
+			DuoPushTypeEN: strings.TrimSpace(pushTypeENEntry.Text),
+			DuoPushTypeES: strings.TrimSpace(pushTypeESEntry.Text),
+		}
+		switch lang {
+		case "en":
+			nextCfg.DuoPushType = nextCfg.DuoPushTypeEN
+		case "es":
+			nextCfg.DuoPushType = nextCfg.DuoPushTypeES
+		default:
+			nextCfg.DuoPushType = nextCfg.DuoPushTypeDE
 		}
 		if e = next.Save(nextCfg); e != nil {
 			next.Close()
@@ -183,12 +220,20 @@ func Run() error {
 	duoIKeyLabel, duoSKeyLabel := widget.NewLabel(i18n.Translations(lang)["duoIKey"]), widget.NewLabel(i18n.Translations(lang)["duoSKey"])
 	duoHostLabel, duoUsernameLabel := widget.NewLabel(i18n.Translations(lang)["duoHost"]), widget.NewLabel(i18n.Translations(lang)["duoUsername"])
 	duoKeyHelp := widget.NewLabel(i18n.Translations(lang)["duoKeyHelp"])
+	pushTextTitle := widget.NewLabel(i18n.Translations(lang)["duoPushTextTitle"])
+	pushTextDELabel := widget.NewLabel(i18n.Translations(lang)["duoPushTextDE"])
+	pushTextENLabel := widget.NewLabel(i18n.Translations(lang)["duoPushTextEN"])
+	pushTextESLabel := widget.NewLabel(i18n.Translations(lang)["duoPushTextES"])
 	duoFields := container.NewVBox(
 		duoAuthTitle,
 		duoIKeyLabel, duoIKeyEntry,
 		duoSKeyLabel, duoSKeyEntry,
 		duoHostLabel, duoHostEntry,
 		duoUsernameLabel, duoUserEntry,
+		widget.NewSeparator(), pushTextTitle,
+		pushTextDELabel, pushTypeDEEntry,
+		pushTextENLabel, pushTypeENEntry,
+		pushTextESLabel, pushTypeESEntry,
 		duoKeyHelp,
 		widget.NewSeparator(), container.NewVBox(databaseName, dbEntry), saveButton, saveStatus,
 	)
@@ -348,6 +393,10 @@ func Run() error {
 		duoHostLabel.SetText(t["duoHost"])
 		duoUsernameLabel.SetText(t["duoUsername"])
 		duoKeyHelp.SetText(t["duoKeyHelp"])
+		pushTextTitle.SetText(t["duoPushTextTitle"])
+		pushTextDELabel.SetText(t["duoPushTextDE"])
+		pushTextENLabel.SetText(t["duoPushTextEN"])
+		pushTextESLabel.SetText(t["duoPushTextES"])
 		duoSKeyEntry.SetPlaceHolder(t["duoSecretPlaceholder"])
 		duoHostEntry.SetPlaceHolder(t["duoHostPlaceholder"])
 		duoUserEntry.SetPlaceHolder(t["duoUserPlaceholder"])
@@ -375,7 +424,7 @@ func Run() error {
 			statusCard, settingsCard, setupCard, headerRow, footer,
 			subtitle, languageSelect, topRight, sessionValue, authValue, duoValue,
 			sessionName, authName, duoName,
-			databaseName, saveButton, saveStatus, checkButton,
+			databaseName, saveButton, saveStatus, checkButton, pushTextTitle, pushTextDELabel, pushTextENLabel, pushTextESLabel,
 			gnomeInstallButton, gnomeInstallStatus, serviceInstallButton, serviceInstallStatus,
 			githubStatus,
 		} {
