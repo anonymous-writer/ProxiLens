@@ -301,7 +301,7 @@ func authenticateAndUnlock(progress func(string), setState func(string), waitFor
 			return err
 		}
 	}
-	if err := (duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername}).Push(ctx, progress); err != nil {
+	if err := (duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername, PushType: cfg.DuoPushType}).Push(ctx, progress); err != nil {
 		return err
 	}
 	setState("success")

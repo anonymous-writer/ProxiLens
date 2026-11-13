@@ -28,6 +28,7 @@ type Settings struct {
 	DuoSKey      string
 	DuoHost      string
 	DuoUsername  string
+	DuoPushType  string
 }
 
 type Store struct {
@@ -97,6 +98,8 @@ func (s *Store) Load() (Settings, error) {
 			return cfg, err
 		}
 		switch k {
+		case "duo_push_type":
+			cfg.DuoPushType = v
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -137,7 +140,16 @@ func (s *Store) Save(cfg Settings) error {
 			return e
 		}
 	}
+	if _, err = tx.Exec(`INSERT INTO settings(key,value) VALUES('duo_push_type',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strings.TrimSpace(cfg.DuoPushType)); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+// SetDuoPushType stores the localized Duo notification type without rewriting credentials.
+func (s *Store) SetDuoPushType(value string) error {
+	_, err := s.db.Exec(`INSERT INTO settings(key,value) VALUES('duo_push_type',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value`, strings.TrimSpace(value))
+	return err
 }
 
 func getKey() ([]byte, error) {

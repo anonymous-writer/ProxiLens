@@ -1,25 +1,24 @@
-# Direkte Duo-Push-Authentifizierung
+# Direct Duo Push Authentication
 
-ProxiLens verwendet ausschließlich die direkte Duo Auth API.
+ProxiLens uses exclusively the direct Duo Auth API.
 
-## Einrichtung
+## Setup
 
-In den Einstellungen `Direkt mit Duo Push` wählen und IKEY, SKEY, API Hostname sowie Duo-Benutzername eintragen. Die Zugangsdaten werden in SQLite verschlüsselt; der AES-Schlüssel liegt im GNOME-Schlüsselbund. Der Secret Key wird nicht protokolliert.
+In the settings, select `Direct Duo Push` and enter the IKEY, SKEY, API Hostname, and Duo username. The credentials are encrypted in SQLite; the AES key is stored in the GNOME keyring. The Secret Key is never logged.
 
-`Verbindung prüfen` ruft `/auth/v2/check` auf und sendet keine Push-Nachricht.
+`Check Connection` calls `/auth/v2/check` and does not send a push notification.
 
-Beim expliziten GNOME-Entsperrbutton bzw. beim vorhandenen Resume-Ablauf sendet der Agent `/auth/v2/auth` mit `factor=push`, `device=auto` und `async=1`, fragt `/auth/v2/auth_status` bis zu 90 Sekunden ab und akzeptiert ausschließlich `allow`. Danach prüft der Agent erneut, ob dieselbe GNOME-Sitzung weiterhin gesperrt ist, bevor er den vorhandenen Unlock-Pfad aufruft.
+When the explicit GNOME unlock button is pressed, or during the existing resume flow, the agent sends `/auth/v2/auth` with `factor=push`, `device=auto`, and `async=1`. It then polls `/auth/v2/auth_status` for up to 90 seconds and accepts only `allow`. Afterwards, the agent checks again whether the same GNOME session is still locked before invoking the existing unlock path.
 
-Der Duo Secret Key gehört ausschließlich in die lokale Anwendung. Niemals in Git, CI-Variablen für einen normalen Paketbuild oder Logs eintragen.
+The Duo Secret Key must remain exclusively within the local application. Never store it in Git, CI variables for a regular package build, or logs.
 
-## Testhinweise
+## Testing Notes
 
-- Erst `Verbindung prüfen` verwenden.
-- Danach den GNOME-Button testen und die Duo-Mobile-Anfrage bestätigen/ablehnen.
-- `go test ./...` und den manuellen AMD64-DEB-Workflow ausführen.
-- Vor produktivem Einsatz die Duo-API-Integration und die Desktop-Unlock-Semantik auf der Ziel-GNOME-Version prüfen.
+- First, use `Check Connection`.
+- Then test the GNOME button and approve or deny the Duo Mobile request.
+- Run `go test ./...` and the manual AMD64 DEB workflow.
+- Before production use, verify the Duo API integration and desktop unlock behavior on the target GNOME version.
 
+## Signing
 
-## Signierung
-
-Die Duo-Anbindung verwendet die von Duo empfohlene v5-Signierung (HMAC-SHA512). POST-Anfragen werden als kompaktes JSON gesendet; GET-Parameter werden RFC-3986-konform in der URL kodiert. Dies entspricht dem aktuellen Standard der offiziellen Duo-API-Clients. Die ältere v2/HMAC-SHA1-Signierung wird nicht mehr verwendet.
+The Duo integration uses Duo's recommended v5 signing method (HMAC-SHA512). POST requests are sent as compact JSON; GET parameters are URL-encoded in accordance with RFC 3986. This corresponds to the current standard used by the official Duo API clients. The older v2/HMAC-SHA1 signing method is no longer used.
