@@ -69,7 +69,8 @@
     "duoSaveKeyError": "Duo Secret Key konnte nicht gespeichert werden",
     "duoPushTypeRequired": "Bitte gib einen Push-Text ein.",
     "duoPushTextTitle": "Duo-Push-Text (frei anpassbar)",
-    "duoPushTextLabel": "Push-Bezeichnung"
+    "duoPushTextLabel": "Push-Bezeichnung",
+    "languageSelectPlaceholder": "Sprache wählen"
   },
   "en": {
     "check": "Check connection",
@@ -141,7 +142,8 @@
     "duoSaveKeyError": "Duo Secret Key could not be saved",
     "duoPushTypeRequired": "Please enter a push text.",
     "duoPushTextTitle": "Duo push text (customizable)",
-    "duoPushTextLabel": "Push label"
+    "duoPushTextLabel": "Push label",
+    "languageSelectPlaceholder": "Choose language"
   },
   "es": {
     "check": "Comprobar conexión",
@@ -213,6 +215,7 @@
     "duoSaveKeyError": "No se pudo guardar la clave secreta de Duo",
     "duoPushTypeRequired": "Introduce un texto para la notificación.",
     "duoPushTextTitle": "Texto de Duo Push (personalizable)",
-    "duoPushTextLabel": "Texto de la notificación"
+    "duoPushTextLabel": "Texto de la notificación",
+    "languageSelectPlaceholder": "Elegir idioma"
   }
 }

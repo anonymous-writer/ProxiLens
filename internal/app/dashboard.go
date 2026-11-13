@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/png"
+	"image/color"
 	"io"
 	"log"
 	"net/http"
@@ -79,9 +80,15 @@ func Run() error {
 	logoImage.SetMinSize(fyne.NewSize(58, 72))
 	logoImage.FillMode = canvas.ImageFillContain
 
-	title := canvas.NewText("ProxiLens", theme.Color(theme.ColorNameForeground))
-	title.TextSize = 30
-	title.TextStyle.Bold = true
+	// Brand wordmark styled like the LeaseLens parallel project:
+	// "Proxi" in the normal foreground and "Lens" in the shared blue accent.
+	proxiTitle := canvas.NewText("Proxi", theme.Color(theme.ColorNameForeground))
+	lensTitle := canvas.NewText("Lens", color.NRGBA{R: 79, G: 159, B: 248, A: 255})
+	for _, part := range []*canvas.Text{proxiTitle, lensTitle} {
+		part.TextSize = 30
+		part.TextStyle.Bold = true
+	}
+	title := container.NewHBox(proxiTitle, lensTitle)
 	subtitle := widget.NewLabel("Direkte Duo-Authentifizierung")
 	header := container.NewHBox(logoImage, container.NewVBox(title, subtitle))
 	var applyLanguage func(string)
@@ -94,16 +101,26 @@ func Run() error {
 		languageLabels[code], languageCodes[label] = label, code
 		languageOptions = append(languageOptions, label)
 	}
-	languageSelect := widget.NewSelect(languageOptions, func(choice string) {
-		selected := languageCodes[choice]
-		if selected != "" {
-			lang = selected
-			a.Preferences().SetString("language", lang)
-			if applyLanguage != nil {
-				applyLanguage(lang)
+	// Build Select directly instead of using widget.NewSelect: Fyne's constructor
+	// translates its built-in "(Select one)" placeholder immediately. Fyne 2.8.2
+	// has no German catalogue entry for that string, which logs a translation
+	// failure even though this selector is preselected below. A localized
+	// placeholder avoids the missing built-in translation entirely.
+	languageSelect := &widget.Select{
+		Options:     languageOptions,
+		PlaceHolder: i18n.Translations(lang)["languageSelectPlaceholder"],
+		OnChanged: func(choice string) {
+			selected := languageCodes[choice]
+			if selected != "" {
+				lang = selected
+				a.Preferences().SetString("language", lang)
+				if applyLanguage != nil {
+					applyLanguage(lang)
+				}
 			}
-		}
-	})
+		},
+	}
+	languageSelect.ExtendBaseWidget(languageSelect)
 	languageSelect.SetSelected(languageLabels[lang])
 
 	sessionValue := widget.NewLabel(i18n.Translations(lang)["gnomeChecking"])
@@ -375,6 +392,14 @@ func Run() error {
 		} else {
 			authValue.SetText(i18n.Translations(lang)["authNotConfigured"])
 		}
+		// Card title/subtitle are plain fields, not data-bound labels. Refresh the
+		// widgets themselves after changing them so their renderers pick up the
+		// new language immediately (canvas.Refresh alone is not sufficient).
+		statusCard.Refresh()
+		settingsCard.Refresh()
+		setupCard.Refresh()
+		languageSelect.PlaceHolder = t["languageSelectPlaceholder"]
+		languageSelect.Refresh()
 		for _, obj := range []fyne.CanvasObject{
 			statusCard, settingsCard, setupCard, headerRow, footer,
 			subtitle, languageSelect, topRight, sessionValue, authValue, duoValue,
