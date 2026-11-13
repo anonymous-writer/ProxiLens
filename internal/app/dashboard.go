@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"image/png"
+	"image/color"
 	"io"
 	"log"
 	"net/http"
@@ -58,12 +59,8 @@ func Run() error {
 	if err != nil {
 		return fmt.Errorf("Einstellungen laden: %w", err)
 	}
-	if cfg.DuoPushType == "" {
-		cfg.DuoPushType = i18n.Translations(lang)["duoPushType"]
-		if s, openErr := configstore.Open(dbPath); openErr == nil {
-			_ = s.SetDuoPushType(cfg.DuoPushType)
-			_ = s.Close()
-		}
+	if strings.TrimSpace(cfg.DuoPushType) == "" {
+		cfg.DuoPushType = "ProxiLens Approval"
 	}
 
 	logoBytes, err := staticassets.FS.ReadFile("wlm-logo.png")
@@ -83,9 +80,15 @@ func Run() error {
 	logoImage.SetMinSize(fyne.NewSize(58, 72))
 	logoImage.FillMode = canvas.ImageFillContain
 
-	title := canvas.NewText("ProxiLens", theme.Color(theme.ColorNameForeground))
-	title.TextSize = 30
-	title.TextStyle.Bold = true
+	// Brand wordmark styled like the LeaseLens parallel project:
+	// "Proxi" in the normal foreground and "Lens" in the shared blue accent.
+	proxiTitle := canvas.NewText("Proxi", theme.Color(theme.ColorNameForeground))
+	lensTitle := canvas.NewText("Lens", color.NRGBA{R: 79, G: 159, B: 248, A: 255})
+	for _, part := range []*canvas.Text{proxiTitle, lensTitle} {
+		part.TextSize = 30
+		part.TextStyle.Bold = true
+	}
+	title := container.NewHBox(proxiTitle, lensTitle)
 	subtitle := widget.NewLabel("Direkte Duo-Authentifizierung")
 	header := container.NewHBox(logoImage, container.NewVBox(title, subtitle))
 	var applyLanguage func(string)
@@ -98,21 +101,26 @@ func Run() error {
 		languageLabels[code], languageCodes[label] = label, code
 		languageOptions = append(languageOptions, label)
 	}
-	languageSelect := widget.NewSelect(languageOptions, func(choice string) {
-		selected := languageCodes[choice]
-		if selected != "" {
-			lang = selected
-			a.Preferences().SetString("language", lang)
-			if store, err := configstore.Open(dbPath); err == nil {
-				_ = store.SetDuoPushType(i18n.Translations(lang)["duoPushType"])
-				_ = store.Close()
+	// Build Select directly instead of using widget.NewSelect: Fyne's constructor
+	// translates its built-in "(Select one)" placeholder immediately. Fyne 2.8.2
+	// has no German catalogue entry for that string, which logs a translation
+	// failure even though this selector is preselected below. A localized
+	// placeholder avoids the missing built-in translation entirely.
+	languageSelect := &widget.Select{
+		Options:     languageOptions,
+		PlaceHolder: i18n.Translations(lang)["languageSelectPlaceholder"],
+		OnChanged: func(choice string) {
+			selected := languageCodes[choice]
+			if selected != "" {
+				lang = selected
+				a.Preferences().SetString("language", lang)
+				if applyLanguage != nil {
+					applyLanguage(lang)
+				}
 			}
-			cfg.DuoPushType = i18n.Translations(lang)["duoPushType"]
-			if applyLanguage != nil {
-				applyLanguage(lang)
-			}
-		}
-	})
+		},
+	}
+	languageSelect.ExtendBaseWidget(languageSelect)
 	languageSelect.SetSelected(languageLabels[lang])
 
 	sessionValue := widget.NewLabel(i18n.Translations(lang)["gnomeChecking"])
@@ -134,6 +142,8 @@ func Run() error {
 	duoSKeyEntry.SetPlaceHolder(i18n.Translations(lang)["duoSecretPlaceholder"])
 	duoHostEntry.SetPlaceHolder(i18n.Translations(lang)["duoHostPlaceholder"])
 	duoUserEntry.SetPlaceHolder(i18n.Translations(lang)["duoUserPlaceholder"])
+	pushTypeEntry := widget.NewEntry()
+	pushTypeEntry.SetText(cfg.DuoPushType)
 	dbEntry := widget.NewEntry()
 	dbEntry.SetText(dbPath)
 	databaseName := boldLabel("Database file")
@@ -153,10 +163,15 @@ func Run() error {
 		if duoSecret == "" && filepath.Clean(newPath) == filepath.Clean(dbPath) {
 			duoSecret = cfg.DuoSKey
 		}
+		pushType := strings.TrimSpace(pushTypeEntry.Text)
+		if pushType == "" {
+			dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["duoPushTypeRequired"]), w)
+			return
+		}
 		nextCfg := configstore.Settings{
 			DuoIKey: strings.TrimSpace(duoIKeyEntry.Text), DuoSKey: duoSecret,
 			DuoHost: strings.TrimSpace(duoHostEntry.Text), DuoUsername: strings.TrimSpace(duoUserEntry.Text),
-			DuoPushType: i18n.Translations(lang)["duoPushType"],
+			DuoPushType: pushType,
 		}
 		if e = next.Save(nextCfg); e != nil {
 			next.Close()
@@ -183,12 +198,16 @@ func Run() error {
 	duoIKeyLabel, duoSKeyLabel := widget.NewLabel(i18n.Translations(lang)["duoIKey"]), widget.NewLabel(i18n.Translations(lang)["duoSKey"])
 	duoHostLabel, duoUsernameLabel := widget.NewLabel(i18n.Translations(lang)["duoHost"]), widget.NewLabel(i18n.Translations(lang)["duoUsername"])
 	duoKeyHelp := widget.NewLabel(i18n.Translations(lang)["duoKeyHelp"])
+	pushTextTitle := widget.NewLabel(i18n.Translations(lang)["duoPushTextTitle"])
+	pushTextLabel := widget.NewLabel(i18n.Translations(lang)["duoPushTextLabel"])
 	duoFields := container.NewVBox(
 		duoAuthTitle,
 		duoIKeyLabel, duoIKeyEntry,
 		duoSKeyLabel, duoSKeyEntry,
 		duoHostLabel, duoHostEntry,
 		duoUsernameLabel, duoUserEntry,
+		widget.NewSeparator(), pushTextTitle,
+		pushTextLabel, pushTypeEntry,
 		duoKeyHelp,
 		widget.NewSeparator(), container.NewVBox(databaseName, dbEntry), saveButton, saveStatus,
 	)
@@ -348,6 +367,8 @@ func Run() error {
 		duoHostLabel.SetText(t["duoHost"])
 		duoUsernameLabel.SetText(t["duoUsername"])
 		duoKeyHelp.SetText(t["duoKeyHelp"])
+		pushTextTitle.SetText(t["duoPushTextTitle"])
+		pushTextLabel.SetText(t["duoPushTextLabel"])
 		duoSKeyEntry.SetPlaceHolder(t["duoSecretPlaceholder"])
 		duoHostEntry.SetPlaceHolder(t["duoHostPlaceholder"])
 		duoUserEntry.SetPlaceHolder(t["duoUserPlaceholder"])
@@ -371,11 +392,19 @@ func Run() error {
 		} else {
 			authValue.SetText(i18n.Translations(lang)["authNotConfigured"])
 		}
+		// Card title/subtitle are plain fields, not data-bound labels. Refresh the
+		// widgets themselves after changing them so their renderers pick up the
+		// new language immediately (canvas.Refresh alone is not sufficient).
+		statusCard.Refresh()
+		settingsCard.Refresh()
+		setupCard.Refresh()
+		languageSelect.PlaceHolder = t["languageSelectPlaceholder"]
+		languageSelect.Refresh()
 		for _, obj := range []fyne.CanvasObject{
 			statusCard, settingsCard, setupCard, headerRow, footer,
 			subtitle, languageSelect, topRight, sessionValue, authValue, duoValue,
 			sessionName, authName, duoName,
-			databaseName, saveButton, saveStatus, checkButton,
+			databaseName, saveButton, saveStatus, checkButton, pushTextTitle, pushTextLabel, pushTypeEntry,
 			gnomeInstallButton, gnomeInstallStatus, serviceInstallButton, serviceInstallStatus,
 			githubStatus,
 		} {
