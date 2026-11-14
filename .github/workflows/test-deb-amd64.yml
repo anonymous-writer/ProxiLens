@@ -46,8 +46,17 @@ jobs:
         run: go test ./...
 
       - name: Build AMD64 Debian package
+        env:
+          PROXILENS_VERSION: test-${{ github.run_number }}
+          PROXILENS_COMMIT: ${{ github.sha }}
+          PROXILENS_BUILD_KIND: Test-Build
         run: |
           set -euo pipefail
+          SHORT_SHA="${GITHUB_SHA:0:7}"
+          export PROXILENS_LDFLAGS="-X github.com/local/proxilens/internal/buildinfo.Version=${PROXILENS_VERSION} -X github.com/local/proxilens/internal/buildinfo.Commit=${PROXILENS_COMMIT} -X github.com/local/proxilens/internal/buildinfo.BuildKind=${PROXILENS_BUILD_KIND}"
+          BASE_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo v2.0.1)"
+          DEB_VERSION="${BASE_VERSION#v}~test.${GITHUB_RUN_NUMBER}+${SHORT_SHA}"
+          sed -i "1s/^proxilens ([^)]*)/proxilens (${DEB_VERSION}-1)/" debian/changelog
           dpkg-buildpackage -us -uc -b -d
 
           VERSION="$(dpkg-parsechangelog --show-field Version)"

@@ -60,8 +60,10 @@ jobs:
 
           mkdir -p dist/proxilens
 
+          COMMIT="$(git rev-parse HEAD)"
+          BUILD_LDFLAGS="-s -w -X github.com/local/proxilens/internal/buildinfo.Version=${VERSION} -X github.com/local/proxilens/internal/buildinfo.Commit=${COMMIT} -X github.com/local/proxilens/internal/buildinfo.BuildKind=Release"
           go build -trimpath -ldflags="-s -w" -o dist/proxilens/proxilens-wake-agent ./cmd/proxilens-wake-agent
-          go build -trimpath -ldflags="-s -w" -o dist/proxilens/proxilens-ui .
+          go build -trimpath -ldflags="${BUILD_LDFLAGS}" -o dist/proxilens/proxilens-ui .
 
           cp README.md dist/proxilens/
 
@@ -81,6 +83,7 @@ jobs:
           # Match the Debian package version to the published GitHub tag.
           DEB_VERSION="${VERSION#v}"
           sed -i "1s/^proxilens ([^)]*)/proxilens (${DEB_VERSION}-1)/" debian/changelog
+          export PROXILENS_LDFLAGS="-X github.com/local/proxilens/internal/buildinfo.Version=${VERSION} -X github.com/local/proxilens/internal/buildinfo.Commit=${COMMIT} -X github.com/local/proxilens/internal/buildinfo.BuildKind=Release"
 
           # Build the Debian package from the same architecture-specific runner.
           sudo apt-get update

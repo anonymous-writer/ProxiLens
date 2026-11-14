@@ -27,88 +27,13 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/local/proxilens/internal/buildinfo"
 	"github.com/local/proxilens/internal/configstore"
 	"github.com/local/proxilens/internal/duo"
 	"github.com/local/proxilens/internal/i18n"
 	"github.com/local/proxilens/internal/session"
 	staticassets "github.com/local/proxilens/static"
 )
-
-// compareVersionTags compares conventional numeric version tags (with an
-// optional leading v). Non-version tags are ignored; equal/invalid tags compare
-// as equal. A stable version sorts after its prerelease (2.0.0 > 2.0.0-rc.1).
-func compareVersionTags(a, b string) int {
-	av, aok := parseVersionTag(a)
-	bv, bok := parseVersionTag(b)
-	if !aok {
-		if bok {
-			return -1
-		}
-		return 0
-	}
-	if !bok {
-		return 1
-	}
-	for i := 0; i < 3; i++ {
-		if av.parts[i] > bv.parts[i] {
-			return 1
-		}
-		if av.parts[i] < bv.parts[i] {
-			return -1
-		}
-	}
-	if av.pre == "" && bv.pre != "" {
-		return 1
-	}
-	if av.pre != "" && bv.pre == "" {
-		return -1
-	}
-	if av.pre > bv.pre {
-		return 1
-	}
-	if av.pre < bv.pre {
-		return -1
-	}
-	return 0
-}
-
-type parsedVersionTag struct {
-	parts [3]int
-	pre   string
-}
-
-func parseVersionTag(tag string) (parsedVersionTag, bool) {
-	var result parsedVersionTag
-	tag = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(tag), "v"))
-	if tag == "" {
-		return result, false
-	}
-	core := tag
-	if i := strings.IndexAny(core, "-+"); i >= 0 {
-		if core[i] == '-' {
-			result.pre = core[i+1:]
-		}
-		core = core[:i]
-	}
-	pieces := strings.Split(core, ".")
-	if len(pieces) < 1 || len(pieces) > 3 {
-		return result, false
-	}
-	for i, piece := range pieces {
-		if piece == "" {
-			return result, false
-		}
-		value := 0
-		for _, r := range piece {
-			if r < '0' || r > '9' {
-				return result, false
-			}
-			value = value*10 + int(r-'0')
-		}
-		result.parts[i] = value
-	}
-	return result, true
-}
 
 func Run() error {
 	a := app.NewWithID("de.local.proxilens")
@@ -520,9 +445,6 @@ func Run() error {
 			var release struct {
 				TagName string `json:"tag_name"`
 			}
-			var tags []struct {
-				Name string `json:"name"`
-			}
 			var runs struct {
 				WorkflowRuns []struct {
 					UpdatedAt  string `json:"updated_at"`
@@ -530,22 +452,8 @@ func Run() error {
 				} `json:"workflow_runs"`
 			}
 			var latest, ci string
-			// GitHub's /releases/latest endpoint can point at an older release
-			// when a newer tag exists but the release was not marked as latest.
-			// Read the tags as well and select the highest semantic version.
-			if err := fetch("https://api.github.com/repos/anonymous-writer/ProxiLens/tags?per_page=100", &tags); err == nil {
-				for _, tag := range tags {
-					if compareVersionTags(tag.Name, latest) > 0 {
-						latest = tag.Name
-					}
-				}
-			}
-			// Keep the latest-release endpoint as a fallback for repositories
-			// whose release tag is not present in the first tags page.
 			if err := fetch("https://api.github.com/repos/anonymous-writer/ProxiLens/releases/latest", &release); err == nil && release.TagName != "" {
-				if latest == "" || compareVersionTags(release.TagName, latest) > 0 {
-					latest = release.TagName
-				}
+				latest = release.TagName
 			}
 			if err := fetch("https://api.github.com/repos/anonymous-writer/ProxiLens/actions/runs?per_page=20", &runs); err == nil {
 				for _, run := range runs.WorkflowRuns {
@@ -559,7 +467,7 @@ func Run() error {
 			}
 			fyne.Do(func() {
 				t := i18n.Translations(lang)
-				message := t["githubReachable"]
+				message := t["githubReachable"] + t["installedBuild"] + buildinfo.DisplayVersion()
 				if latest != "" {
 					message += t["githubLatest"] + latest
 				}
@@ -567,7 +475,7 @@ func Run() error {
 					message += t["githubCI"] + ci
 				}
 				if latest == "" && ci == "" {
-					message = t["githubUnavailable"]
+					message = t["githubUnavailable"] + t["installedBuild"] + buildinfo.DisplayVersion()
 				}
 				githubStatus.SetText(message)
 			})
