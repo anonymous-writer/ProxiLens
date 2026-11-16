@@ -72,7 +72,7 @@ jobs:
           dpkg-deb --info "dist/ProxiLens-test-${VERSION}-amd64.deb"
 
       - name: Upload test DEB
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: proxilens-test-deb-amd64-${{ github.run_number }}
           path: dist/*
