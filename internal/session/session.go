@@ -3,10 +3,12 @@
 package session
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"os/user"
 	"strings"
+	"time"
 )
 
 type State struct {
@@ -26,7 +28,9 @@ func Current() (State, error) {
 	if err != nil {
 		return State{}, err
 	}
-	out, err := exec.Command("loginctl", "list-sessions", "--no-legend").Output()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "loginctl", "list-sessions", "--no-legend").Output()
 	if err != nil {
 		return State{}, fmt.Errorf("loginctl list-sessions: %w", err)
 	}
@@ -39,9 +43,11 @@ func Current() (State, error) {
 			continue
 		}
 
-		props, err := exec.Command("loginctl", "show-session", fields[0],
+		showCtx, showCancel := context.WithTimeout(context.Background(), 2*time.Second)
+		props, err := exec.CommandContext(showCtx, "loginctl", "show-session", fields[0],
 			"-p", "Name", "-p", "Seat", "-p", "Type", "-p", "Class",
 			"-p", "Active", "-p", "LockedHint").Output()
+		showCancel()
 		if err != nil {
 			continue
 		}
@@ -103,7 +109,9 @@ func UnlockCurrent() error {
 	if !s.Locked {
 		return fmt.Errorf("Sitzung %s ist nicht gesperrt; Entsperrtest abgebrochen", s.ID)
 	}
-	if out, err := exec.Command("loginctl", "unlock-session", s.ID).CombinedOutput(); err != nil {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, "loginctl", "unlock-session", s.ID).CombinedOutput(); err != nil {
 		return fmt.Errorf("loginctl unlock-session %s: %w: %s", s.ID, err, strings.TrimSpace(string(out)))
 	}
 	return nil
