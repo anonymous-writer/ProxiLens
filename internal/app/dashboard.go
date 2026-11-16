@@ -483,23 +483,18 @@ func Run() error {
 	}
 
 	refreshSession = func() {
-		// Session discovery invokes loginctl and must never block Fyne's UI thread.
-		go func() {
-			s, e := session.Current()
-			fyne.Do(func() {
-				t := i18n.Translations(lang)
-				if e != nil {
-					sessionValue.SetText(t["sessionUnavailable"] + ": " + e.Error())
-					return
-				}
-				lock := t["unlocked"]
-				if s.Locked {
-					lock = t["locked"]
-				}
-				sessionValue.SetText(fmt.Sprintf(t["sessionFormat"], s.ID, lock, s.Type))
-			})
-		}()
+		s, e := session.Current()
+		if e != nil {
+			sessionValue.SetText(i18n.Translations(lang)["sessionUnavailable"] + ": " + e.Error())
+			return
+		}
+		lock := i18n.Translations(lang)["unlocked"]
+		if s.Locked {
+			lock = i18n.Translations(lang)["locked"]
+		}
+		sessionValue.SetText(fmt.Sprintf(i18n.Translations(lang)["sessionFormat"], s.ID, lock, s.Type))
 	}
+	refreshSession()
 	refreshGitHub()
 	go func() {
 		ticker := time.NewTicker(10 * time.Minute)

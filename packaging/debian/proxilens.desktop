@@ -8,4 +8,4 @@ Exec=/usr/bin/proxilens-ui
 Icon=proxilens
 Terminal=false
 Categories=Utility;Security;
-StartupNotify=false
+StartupNotify=true

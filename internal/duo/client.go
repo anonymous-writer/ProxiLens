@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"sort"
@@ -150,6 +151,39 @@ func (c Config) request(ctx context.Context, method, path string, params url.Val
 	return env.Response, nil
 }
 
+// authStatusWithRetry retries only transport-level failures. Duo API errors,
+// malformed responses, explicit deny results and unexpected statuses remain
+// terminal. The caller's context and the Push deadline bound all retries.
+func (c Config) authStatusWithRetry(ctx context.Context, txid string) (json.RawMessage, error) {
+	delays := []time.Duration{1 * time.Second, 2 * time.Second, 3 * time.Second}
+	for attempt := 0; ; attempt++ {
+		status, err := c.request(ctx, http.MethodGet, "/auth/v2/auth_status", url.Values{"txid": {txid}})
+		if err == nil {
+			return status, nil
+		}
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		var networkErr net.Error
+		if !errors.As(err, &networkErr) {
+			return nil, err
+		}
+		delay := delays[len(delays)-1]
+		if attempt < len(delays) {
+			delay = delays[attempt]
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
 func (c Config) Check(ctx context.Context) error {
 	_, err := c.request(ctx, http.MethodGet, "/auth/v2/check", url.Values{})
 	return err
@@ -185,7 +219,7 @@ func (c Config) Push(ctx context.Context, progress func(string)) error {
 		case <-deadline.C:
 			return errors.New("Duo-Push ist abgelaufen (Timeout)")
 		case <-ticker.C:
-			status, e := c.request(ctx, http.MethodGet, "/auth/v2/auth_status", url.Values{"txid": {started.TxID}})
+			status, e := c.authStatusWithRetry(ctx, started.TxID)
 			if e != nil {
 				return e
 			}

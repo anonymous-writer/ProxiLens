@@ -36,7 +36,7 @@ type coordinator struct {
 }
 
 func main() {
-	log.SetFlags(log.LstdFlags | log.LUTC)
+	log.SetFlags(log.LstdFlags)
 	log.Println("ProxiLens experimental agent started; watching logind resume and LockedHint")
 	c := &coordinator{}
 	go c.watchLockedHint()
@@ -77,11 +77,15 @@ func (c *coordinator) watchLockedHint() {
 	defer ticker.Stop()
 
 	var lastError string
+	startedAt := time.Now()
 	for {
 		s, err := session.Current()
 		if err != nil {
 			message := err.Error()
-			if message != lastError {
+			// During login, logind can publish the user bus before the active
+			// graphical seat session is fully discoverable. Give it a short
+			// grace period; after that, report the problem once as before.
+			if time.Since(startedAt) >= 3*time.Second && message != lastError {
 				log.Printf("logind-Sperrstatus momentan nicht verfügbar: %v", err)
 				lastError = message
 			}
