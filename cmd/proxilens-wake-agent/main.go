@@ -305,7 +305,22 @@ func authenticateAndUnlock(progress func(string), setState func(string), waitFor
 			return err
 		}
 	}
-	if err := (duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername, PushType: cfg.DuoPushType}).Push(ctx, progress); err != nil {
+	duoClient := duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername, PushType: cfg.DuoPushType}
+	// Sleep/Wake can race with a password unlock. Re-check the same session
+	// immediately before creating a Duo transaction, after network recovery.
+	// This prevents a delayed network-ready event from sending an unnecessary
+	// push after the user has already unlocked the desktop.
+	beforePush := func() error {
+		current, checkErr := session.Current()
+		if checkErr != nil {
+			return checkErr
+		}
+		if current.ID != s.ID || !current.Locked {
+			return fmtError("Sitzung wurde vor dem Duo-Push bereits entsperrt oder geändert; kein Push gesendet")
+		}
+		return nil
+	}
+	if err := duoClient.PushWithGuard(ctx, progress, beforePush); err != nil {
 		return err
 	}
 	setState("success")
