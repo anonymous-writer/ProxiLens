@@ -230,7 +230,7 @@ func (c *coordinator) triggerButtonUnlock() {
 		}()
 		log.Println("Duo-Button auf dem GNOME-Sperrbildschirm betätigt")
 		c.setDuoState("pending")
-		if err := authenticateAndUnlock(func(msg string) { log.Printf("Authentifizierung: %s", msg) }, c.setDuoState, false); err != nil {
+		if err := authenticateAndUnlock(func(msg string) { log.Printf("Authentifizierung: %s", msg) }, c.setDuoState, false, nil); err != nil {
 			c.setDuoState("failed")
 			log.Printf("Duo-Entsperrung über Sperrbildschirm-Button fehlgeschlagen: %v", err)
 			return
@@ -261,14 +261,24 @@ func (c *coordinator) triggerResume() {
 		}()
 		log.Println("Sleep/Wake erkannt; prüfe, ob die Sitzung weiterhin gesperrt ist")
 		c.setDuoState("pending")
-		if err := authenticateAndUnlock(func(msg string) { log.Printf("Authentifizierung: %s", msg) }, c.setDuoState, true); err != nil {
+		if err := authenticateAndUnlock(func(msg string) { log.Printf("Authentifizierung: %s", msg) }, c.setDuoState, true, func() error {
+			// GNOME's sessionMode signal changes as soon as password unlock
+			// succeeds. LockedHint can lag behind, so require both indicators.
+			c.mu.Lock()
+			gnomeKnown, gnomeLocked := c.gnomeKnown, c.gnomeLocked
+			c.mu.Unlock()
+			if !gnomeKnown || !gnomeLocked {
+				return fmtError("GNOME-Sperrbildschirm wurde bereits verlassen; kein Duo-Push gesendet")
+			}
+			return nil
+		}); err != nil {
 			c.setDuoState("failed")
 			log.Printf("Duo nach Sleep/Wake nicht abgeschlossen: %v", err)
 		}
 	}()
 }
 
-func authenticateAndUnlock(progress func(string), setState func(string), waitForNetwork bool) error {
+func authenticateAndUnlock(progress func(string), setState func(string), waitForNetwork bool, beforePush func() error) error {
 	// Confirm that this is still the active, locked Wayland user session.
 	s, err := session.Current()
 	if err != nil {
@@ -304,13 +314,14 @@ func authenticateAndUnlock(progress func(string), setState func(string), waitFor
 		if err := waitForDuoNetwork(ctx, cfg.DuoHost); err != nil {
 			return err
 		}
-	}
-	duoClient := duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername, PushType: cfg.DuoPushType}
-	// Sleep/Wake can race with a password unlock. Re-check the same session
-	// immediately before creating a Duo transaction, after network recovery.
-	// This prevents a delayed network-ready event from sending an unnecessary
-	// push after the user has already unlocked the desktop.
-	beforePush := func() error {
+		// First consult GNOME's live lock-dialog state, then re-read logind.
+		// The GNOME signal is essential here because LockedHint may lag after
+		// a fast password unlock.
+		if beforePush != nil {
+			if err := beforePush(); err != nil {
+				return err
+			}
+		}
 		current, checkErr := session.Current()
 		if checkErr != nil {
 			return checkErr
@@ -318,8 +329,10 @@ func authenticateAndUnlock(progress func(string), setState func(string), waitFor
 		if current.ID != s.ID || !current.Locked {
 			return fmtError("Sitzung wurde vor dem Duo-Push bereits entsperrt oder geändert; kein Push gesendet")
 		}
-		return nil
 	}
+	duoClient := duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername, PushType: cfg.DuoPushType}
+	// Run the caller's state guard only after network recovery and immediately
+	// before the POST that creates the Duo transaction.
 	if err := duoClient.PushWithGuard(ctx, progress, beforePush); err != nil {
 		return err
 	}
