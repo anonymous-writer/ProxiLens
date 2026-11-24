@@ -7,24 +7,31 @@ import (
 	"testing"
 )
 
-func TestPAMRuleIsInsertedImmediatelyAfterCommonAuth(t *testing.T) {
+func TestDuoOnlyPAMReplacesPasswordAuthentication(t *testing.T) {
 	input := "auth sufficient pam_rootok.so\n@include common-auth\n@include common-account\n"
-	got := addPAMLine(input)
-	want := "auth sufficient pam_rootok.so\n@include common-auth\n" + pamMarker + "\n" + pamLine[strings.Index(pamLine, "\n")+1:] + "\n@include common-account\n"
-	if got != want {
-		t.Fatalf("unexpected PAM configuration:\n%s", got)
+	got := duoOnlyPAM(input, "michael")
+	if strings.Contains(got, "@include common-auth") || !strings.Contains(got, "auth substack common-auth") {
+		t.Fatalf("conditional Ubuntu password substack missing:\n%s", got)
 	}
-	if again := addPAMLine(got); again != got {
-		t.Fatal("PAM rule was inserted more than once")
+	if !strings.Contains(got, "auth [success=1 default=ignore] pam_succeed_if.so user = michael") {
+		t.Fatalf("configured-user password bypass missing:\n%s", got)
+	}
+	if !strings.Contains(got, pamLine) || !strings.Contains(got, "@include common-account") {
+		t.Fatalf("Duo rule or account stack missing:\n%s", got)
+	}
+	if again := duoOnlyPAM(got, "michael"); again != got {
+		t.Fatal("Duo-only PAM rule was duplicated")
 	}
 }
 
-func TestPAMRuleRemovalPreservesOtherRules(t *testing.T) {
-	input := "auth sufficient pam_rootok.so\n@include common-auth\n" + pamLine + "\n@include common-account\n"
-	got := removePAMLine(input)
-	want := "auth sufficient pam_rootok.so\n@include common-auth\n@include common-account\n"
-	if got != want {
-		t.Fatalf("unexpected PAM configuration after removal:\n%s", got)
+func TestPAMRuleUpgradeReplacesLegacySeteuidRule(t *testing.T) {
+	input := "@include common-auth\n" + pamMarker + "\nauth required pam_exec.so quiet seteuid /usr/lib/proxilens/proxilens-sudo-helper pam-auth\n@include common-account\n"
+	got := duoOnlyPAM(input, "michael")
+	if strings.Contains(got, "seteuid") || strings.Contains(got, "@include common-auth") || !strings.Contains(got, "auth substack common-auth") {
+		t.Fatalf("legacy password/PAM rule remains:\n%s", got)
+	}
+	if strings.Count(got, pamMarker) != 1 || !strings.Contains(got, "pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth") {
+		t.Fatalf("correct Duo-only PAM helper rule missing:\n%s", got)
 	}
 }
 
@@ -54,19 +61,5 @@ func TestAuthenticationSessionScopePrefersLogindSession(t *testing.T) {
 func TestAuthenticationSessionScopeRejectsInvalidLogindID(t *testing.T) {
 	if _, err := authenticationSessionScope("pts/2", "../../etc"); err == nil {
 		t.Fatal("expected invalid logind session ID to be rejected")
-	}
-}
-
-func TestPAMRuleUpgradeReplacesLegacySeteuidRule(t *testing.T) {
-	input := "@include common-auth\n" + pamMarker + "\nauth required pam_exec.so quiet seteuid /usr/lib/proxilens/proxilens-sudo-helper pam-auth\n@include common-account\n"
-	got := addPAMLine(input)
-	if strings.Contains(got, "seteuid") {
-		t.Fatalf("legacy seteuid option remains in PAM rule:\n%s", got)
-	}
-	if strings.Count(got, pamMarker) != 1 {
-		t.Fatalf("expected exactly one ProxiLens PAM marker:\n%s", got)
-	}
-	if !strings.Contains(got, "pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth") {
-		t.Fatalf("corrected PAM helper rule missing:\n%s", got)
 	}
 }

@@ -1,3 +1,10 @@
+proxilens (2.1.0-2) unstable; urgency=medium
+
+  * Add passwordless Duo-only sudo authentication with a session-scoped grant.
+  * Preserve password authentication for other local users and restore PAM on disable.
+
+ -- ProxiLens Maintainers <maintainers@example.invalid>  Tue, 24 Nov 2026 20:30:00 +0100
+
 proxilens (2.1.0-1) unstable; urgency=medium
 
   * Add optional Duo-protected sudo authentication with a configurable approval window.

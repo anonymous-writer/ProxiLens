@@ -277,10 +277,12 @@ gnome-extensions enable proxilens-input@local
 ## Optional Duo protection for sudo
 
 The optional **Sudo-Sicherheit** UI section enables a separate Duo check for
-administrative `sudo` authentication. Ubuntu's password remains required for
-every sudo invocation; Duo is required once per logind session during the
-configurable approval window (15 minutes by default). The GNOME lock-screen
-Duo workflow remains independent. This integration is experimental; read
+administrative `sudo` authentication. For the configured local user, Duo Push
+is the only authentication factor: no Ubuntu password is requested. A successful
+Duo approval is shared across the logind session, including screen lock/unlock,
+for the configurable approval window (15 minutes by default). Other users retain
+their normal Ubuntu password authentication. The GNOME lock-screen Duo workflow
+remains independent. This integration is experimental; read
 [docs/sudo-security.md](docs/sudo-security.md) and keep recovery access before
 enabling it.
 

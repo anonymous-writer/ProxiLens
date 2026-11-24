@@ -26,13 +26,15 @@ import (
 )
 
 const (
-	configPath  = "/etc/proxilens/sudo.json"
-	statusPath  = "/etc/proxilens/sudo-status.json"
-	pamPath     = "/etc/pam.d/sudo"
-	pamMarker   = "# ProxiLens sudo Duo authentication"
-	pamLine     = pamMarker + "\nauth required pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth"
-	sudoersPath = "/etc/sudoers.d/proxilens"
-	helperDir   = "/run/proxilens/sudo-grants"
+	configPath              = "/etc/proxilens/sudo.json"
+	statusPath              = "/etc/proxilens/sudo-status.json"
+	pamBackupPath           = "/etc/proxilens/sudo-pam.original"
+	pamPath                 = "/etc/pam.d/sudo"
+	pamMarker               = "# ProxiLens sudo Duo authentication"
+	pamPasswordBypassMarker = "# ProxiLens Duo-only: skip Ubuntu password only for the configured user."
+	pamLine                 = pamMarker + "\nauth required pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth"
+	sudoersPath             = "/etc/sudoers.d/proxilens"
+	helperDir               = "/run/proxilens/sudo-grants"
 )
 
 type config struct {
@@ -115,16 +117,27 @@ func configure() error {
 		return fmt.Errorf("Duo-Konfiguration konnte nicht geprüft werden: %w", err)
 	}
 
-	pamOriginal, err := os.ReadFile(pamPath)
+	pamCurrent, err := os.ReadFile(pamPath)
 	if err != nil {
 		return fmt.Errorf("PAM-Konfiguration lesen: %w", err)
 	}
-	if !strings.Contains(string(pamOriginal), "@include common-auth") {
-		return errors.New("/etc/pam.d/sudo enthält keine erwartete @include common-auth-Zeile; aus Sicherheitsgründen keine automatische Änderung")
+	// Preserve the exact pre-ProxiLens PAM file so disable can restore the
+	// normal Ubuntu password stack. On upgrades, reuse the existing backup.
+	pamBase := removePAMLine(string(pamCurrent))
+	if backup, backupErr := os.ReadFile(pamBackupPath); backupErr == nil {
+		if !safeRootFile(pamBackupPath, 0600) {
+			return errors.New("PAM-Sicherungsdatei fehlt oder ist nicht root-geschützt")
+		}
+		pamBase = string(backup)
+	} else if !errors.Is(backupErr, os.ErrNotExist) {
+		return fmt.Errorf("PAM-Sicherungsdatei lesen: %w", backupErr)
 	}
-	pamUpdated := addPAMLine(string(pamOriginal))
-	if !strings.Contains(pamUpdated, pamMarker) {
-		return errors.New("PAM-Regel konnte nicht sicher eingefügt werden")
+	if !strings.Contains(pamBase, "@include common-auth") {
+		return errors.New("ursprüngliche /etc/pam.d/sudo enthält keine erwartete @include common-auth-Zeile; keine automatische Änderung")
+	}
+	pamUpdated := duoOnlyPAM(pamBase, cfg.LocalUser)
+	if !strings.Contains(pamUpdated, pamMarker) || strings.Contains(pamUpdated, "@include common-auth") || !strings.Contains(pamUpdated, "auth substack common-auth") {
+		return errors.New("Duo-only-PAM-Regel konnte nicht sicher erstellt werden")
 	}
 	sudoersUpdated := []byte(fmt.Sprintf("# Managed by ProxiLens; do not edit.\nDefaults:%s timestamp_timeout=0\n", cfg.LocalUser))
 	if err := validateSudoers(sudoersUpdated); err != nil {
@@ -146,12 +159,18 @@ func configure() error {
 	if sudoersErr != nil && !errors.Is(sudoersErr, os.ErrNotExist) {
 		return sudoersErr
 	}
+	oldPAMBackup, pamBackupErr := os.ReadFile(pamBackupPath)
+	pamBackupExisted := pamBackupErr == nil
+	if pamBackupErr != nil && !errors.Is(pamBackupErr, os.ErrNotExist) {
+		return pamBackupErr
+	}
 
 	rollback := func() {
 		restoreFile(configPath, oldConfig, configExisted, 0600)
 		restoreFile(statusPath, oldStatus, statusExisted, 0644)
 		restoreFile(sudoersPath, oldSudoers, sudoersExisted, 0440)
-		restoreFile(pamPath, pamOriginal, true, 0644)
+		restoreFile(pamPath, pamCurrent, true, 0644)
+		restoreFile(pamBackupPath, oldPAMBackup, pamBackupExisted, 0600)
 	}
 	cfg.Enabled = true
 	if err := ensureProtectedDir(filepath.Dir(configPath), 0755); err != nil {
@@ -173,6 +192,12 @@ func configure() error {
 		rollback()
 		return fmt.Errorf("sudo-Konfiguration aktualisieren: %w", err)
 	}
+	if !pamBackupExisted {
+		if err := atomicWrite(pamBackupPath, []byte(pamBase), 0600); err != nil {
+			rollback()
+			return fmt.Errorf("ursprüngliche PAM-Konfiguration sichern: %w", err)
+		}
+	}
 	if err := atomicWrite(pamPath, []byte(pamUpdated), 0644); err != nil {
 		rollback()
 		return fmt.Errorf("PAM-Konfiguration aktualisieren: %w", err)
@@ -182,22 +207,37 @@ func configure() error {
 }
 
 func disable() error {
-	pamOriginal, err := os.ReadFile(pamPath)
-	if err != nil {
-		return err
-	}
-	pamUpdated := removePAMLine(string(pamOriginal))
-	if err := atomicWrite(pamPath, []byte(pamUpdated), 0644); err != nil {
+	if backup, err := os.ReadFile(pamBackupPath); err == nil {
+		if !safeRootFile(pamBackupPath, 0600) {
+			return errors.New("PAM-Sicherungsdatei ist nicht root-geschützt; Deaktivierung abgebrochen")
+		}
+		if err := atomicWrite(pamPath, backup, 0644); err != nil {
+			return fmt.Errorf("ursprüngliche PAM-Konfiguration wiederherstellen: %w", err)
+		}
+		if err := os.Remove(pamBackupPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("PAM-Sicherung entfernen: %w", err)
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		// Legacy installation without a backup: remove only the marked rule and
+		// restore common-auth if the earlier version had commented it out.
+		current, readErr := os.ReadFile(pamPath)
+		if readErr != nil {
+			return readErr
+		}
+		updated := restoreCommonAuth(removePAMLine(string(current)))
+		if err := atomicWrite(pamPath, []byte(updated), 0644); err != nil {
+			return err
+		}
+	} else {
 		return err
 	}
 	if err := os.Remove(sudoersPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		_ = atomicWrite(pamPath, pamOriginal, 0644)
 		return fmt.Errorf("sudoers-Regel entfernen: %w", err)
 	}
 	_ = os.Remove(configPath)
 	_ = os.Remove(statusPath)
 	_ = os.RemoveAll(helperDir)
-	fmt.Println("ProxiLens sudo-Schutz wurde deaktiviert. Andere PAM-Regeln wurden nicht verändert.")
+	fmt.Println("ProxiLens sudo-Schutz wurde deaktiviert und die ursprüngliche PAM-Passwortregel wiederhergestellt.")
 	return nil
 }
 
@@ -386,20 +426,40 @@ func processSessionID() (int, error) {
 	return id, nil
 }
 
-func addPAMLine(contents string) string {
-	// Replace any previously installed ProxiLens rule, including the old
-	// seteuid variant. Merely detecting the marker would leave broken rules
-	// in place on upgrades.
+func duoOnlyPAM(contents, localUser string) string {
+	// Remove previous ProxiLens lines and replace Ubuntu's password stack
+	// with the Duo-only gate. Account and session policy remain untouched.
 	contents = removePAMLine(contents)
 	lines := strings.Split(contents, "\n")
-	for i, line := range lines {
+	out := make([]string, 0, len(lines)+2)
+	found := false
+	for _, line := range lines {
 		if strings.TrimSpace(line) == "@include common-auth" {
-			insert := []string{pamMarker, strings.TrimPrefix(pamLine, pamMarker+"\n")}
-			lines = append(lines[:i+1], append(insert, lines[i+1:]...)...)
-			return strings.Join(lines, "\n")
+			if found {
+				return contents
+			}
+			found = true
+			out = append(out, pamPasswordBypassMarker)
+			out = append(out, "auth [success=1 default=ignore] pam_succeed_if.so user = "+localUser)
+			out = append(out, "auth substack common-auth")
+			out = append(out, pamMarker, strings.TrimPrefix(pamLine, pamMarker+"\n"))
+			continue
 		}
+		out = append(out, line)
 	}
-	return contents
+	if !found {
+		return contents
+	}
+	return strings.Join(out, "\n")
+}
+
+func safeRootFile(path string, mode os.FileMode) bool {
+	info, err := os.Lstat(path)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != mode {
+		return false
+	}
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	return ok && stat.Uid == 0
 }
 
 func removePAMLine(contents string) string {
