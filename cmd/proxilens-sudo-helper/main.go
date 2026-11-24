@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/syslog"
 	"os"
 	"os/exec"
 	"os/user"
@@ -66,7 +67,16 @@ type grant struct {
 }
 
 func main() {
+	// PAM diagnostics must run before the privileged-command guard: PAM may
+	// invoke this helper with credentials different from pkexec. Never log Duo
+	// keys, request bodies, or authentication tokens.
+	if len(os.Args) > 1 && os.Args[1] == "pam-auth" {
+		logPAMDiagnostic("start", nil)
+	}
 	if os.Geteuid() != 0 {
+		if len(os.Args) > 1 && os.Args[1] == "pam-auth" {
+			logPAMDiagnostic("privilege-check", errors.New("helper effective uid is not root"))
+		}
 		fatal("Dieses Hilfsprogramm muss über pkexec mit Administratorrechten gestartet werden.")
 	}
 	if len(os.Args) < 2 {
@@ -86,8 +96,32 @@ func main() {
 		err = fmt.Errorf("unbekannte Aktion")
 	}
 	if err != nil {
+		if len(os.Args) > 1 && os.Args[1] == "pam-auth" {
+			logPAMDiagnostic("authentication", err)
+		}
 		fatal(err.Error())
 	}
+	if len(os.Args) > 1 && os.Args[1] == "pam-auth" {
+		logPAMDiagnostic("success", nil)
+	}
+}
+
+// logPAMDiagnostic writes only non-secret PAM metadata and the helper's
+// validation reason to authpriv. This remains visible even when pam_exec.so
+// is configured with the quiet option.
+func logPAMDiagnostic(stage string, err error) {
+	w, openErr := syslog.New(syslog.LOG_AUTHPRIV|syslog.LOG_ERR, "proxilens-sudo-helper")
+	if openErr != nil {
+		return
+	}
+	defer w.Close()
+	msg := fmt.Sprintf("stage=%s service=%q type=%q user=%q ruser=%q tty=%q ruid=%d euid=%d",
+		stage, os.Getenv("PAM_SERVICE"), os.Getenv("PAM_TYPE"), os.Getenv("PAM_USER"),
+		os.Getenv("PAM_RUSER"), os.Getenv("PAM_TTY"), os.Getuid(), os.Geteuid())
+	if err != nil {
+		msg += " reason=" + strings.ReplaceAll(err.Error(), "\n", " ")
+	}
+	_ = w.Err(msg)
 }
 
 func fatal(message string) {
