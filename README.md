@@ -274,16 +274,26 @@ gnome-extensions disable proxilens-input@local
 gnome-extensions enable proxilens-input@local
 ```
 
+## Optional Duo protection for sudo
+
+The optional **Sudo-Sicherheit** UI section enables a separate Duo check for
+administrative `sudo` authentication. Ubuntu's password remains required for
+every sudo invocation; Duo is required once per logind session during the
+configurable approval window (15 minutes by default). The GNOME lock-screen
+Duo workflow remains independent. This integration is experimental; read
+[docs/sudo-security.md](docs/sudo-security.md) and keep recovery access before
+enabling it.
+
 ## Build from source
 
 Install the Linux development dependencies listed in
-[`.github/workflows/ci.yml`](.github/workflows/ci.yml), then build both
-binaries from the repository root:
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml), then build the binaries from the repository root:
 
 ``` bash
 mkdir -p dist
 go build -trimpath -o dist/proxilens-ui .
 go build -trimpath -o dist/proxilens-wake-agent ./cmd/proxilens-wake-agent
+go build -trimpath -o dist/proxilens-sudo-helper ./cmd/proxilens-sudo-helper
 ```
 
 Run the test suite with:
@@ -303,6 +313,10 @@ go test ./...
 5.  Test Sleep/Wake separately.
 6.  Confirm that the existing Duo workflow is preserved after resume
     when the session is still locked.
+7.  For the experimental sudo feature, enable it from **Sudo-Sicherheit**;
+    verify the first `sudo` in a login session requires password and Duo, a
+    second `sudo` requires the password but no Duo, and a new Duo push is
+    required after the selected approval window expires.
 
 Expected status sequence for the manual button workflow:
 

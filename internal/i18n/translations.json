@@ -71,7 +71,21 @@
     "duoPushTypeRequired": "Bitte gib einen Push-Text ein.",
     "duoPushTextTitle": "Duo-Push-Text (frei anpassbar)",
     "duoPushTextLabel": "Push-Bezeichnung",
-    "languageSelectPlaceholder": "Sprache wählen"
+    "languageSelectPlaceholder": "Sprache wählen",
+    "sudoTitle": "Sudo-Sicherheit",
+    "sudoSubtitle": "Zusätzlicher Duo-Schutz für administrative Befehle; unabhängig von der GNOME-Entsperrung.",
+    "sudoEnable": "Duo-Schutz für sudo aktivieren",
+    "sudoDuration": "Duo-Freigabedauer (Minuten)",
+    "sudoPasswordNote": "Das Ubuntu-Passwort wird bei jedem sudo-Aufruf weiterhin verlangt. Duo wird innerhalb der Freigabedauer nur einmal bestätigt.",
+    "sudoApply": "Sudo-Schutz übernehmen",
+    "sudoNotConfigured": "Sudo-Duo ist nicht aktiviert.",
+    "sudoActive": "Sudo-Duo ist aktiv · Freigabezeit",
+    "sudoDisabled": "Sudo-Duo wurde deaktiviert.",
+    "sudoApplying": "Sudo-Konfiguration wird mit Administratorrechten aktualisiert …",
+    "sudoFailed": "Sudo-Konfiguration konnte nicht geändert werden.",
+    "sudoNeedsDuo": "Bitte zuerst die Duo-Zugangsdaten speichern.",
+    "sudoHelperMissing": "Der ProxiLens-Sudo-Helfer ist nicht installiert.",
+    "sudoDurationInvalid": "Bitte eine gültige Freigabedauer auswählen."
   },
   "en": {
     "check": "Check connection",
@@ -145,7 +159,21 @@
     "duoPushTypeRequired": "Please enter a push text.",
     "duoPushTextTitle": "Duo push text (customizable)",
     "duoPushTextLabel": "Push label",
-    "languageSelectPlaceholder": "Choose language"
+    "languageSelectPlaceholder": "Choose language",
+    "sudoTitle": "Sudo security",
+    "sudoSubtitle": "Additional Duo protection for administrative commands; independent of GNOME unlock.",
+    "sudoEnable": "Enable Duo protection for sudo",
+    "sudoDuration": "Duo approval duration (minutes)",
+    "sudoPasswordNote": "Your Ubuntu password is still required for every sudo invocation. Duo is approved only once during the selected window.",
+    "sudoApply": "Apply sudo protection",
+    "sudoNotConfigured": "Sudo Duo is not enabled.",
+    "sudoActive": "Sudo Duo is active · approval window",
+    "sudoDisabled": "Sudo Duo has been disabled.",
+    "sudoApplying": "Updating sudo configuration with administrator privileges …",
+    "sudoFailed": "Could not update sudo configuration.",
+    "sudoNeedsDuo": "Please save the Duo credentials first.",
+    "sudoHelperMissing": "The ProxiLens sudo helper is not installed.",
+    "sudoDurationInvalid": "Please select a valid approval duration."
   },
   "es": {
     "check": "Comprobar conexión",
@@ -219,6 +247,20 @@
     "duoPushTypeRequired": "Introduce un texto para la notificación.",
     "duoPushTextTitle": "Texto de Duo Push (personalizable)",
     "duoPushTextLabel": "Texto de la notificación",
-    "languageSelectPlaceholder": "Elegir idioma"
+    "languageSelectPlaceholder": "Elegir idioma",
+    "sudoTitle": "Seguridad de sudo",
+    "sudoSubtitle": "Protección adicional de Duo para comandos administrativos; independiente del desbloqueo de GNOME.",
+    "sudoEnable": "Activar protección Duo para sudo",
+    "sudoDuration": "Duración de la autorización Duo (minutos)",
+    "sudoPasswordNote": "La contraseña de Ubuntu seguirá siendo necesaria en cada ejecución de sudo. Duo solo se confirma una vez durante el intervalo seleccionado.",
+    "sudoApply": "Aplicar protección sudo",
+    "sudoNotConfigured": "Duo para sudo no está activado.",
+    "sudoActive": "Duo para sudo está activo · duración",
+    "sudoDisabled": "Duo para sudo se ha desactivado.",
+    "sudoApplying": "Actualizando la configuración de sudo con privilegios de administrador …",
+    "sudoFailed": "No se pudo actualizar la configuración de sudo.",
+    "sudoNeedsDuo": "Guarda primero las credenciales de Duo.",
+    "sudoHelperMissing": "El ayudante sudo de ProxiLens no está instalado.",
+    "sudoDurationInvalid": "Selecciona una duración válida."
   }
 }

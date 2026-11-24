@@ -10,6 +10,7 @@ override_dh_auto_build:
 	mkdir -p build
 	go build -trimpath -ldflags="-s -w $(PROXILENS_LDFLAGS)" -o build/proxilens-ui .
 	go build -trimpath -ldflags="-s -w" -o build/proxilens-wake-agent ./cmd/proxilens-wake-agent
+	go build -trimpath -ldflags="-s -w" -o build/proxilens-sudo-helper ./cmd/proxilens-sudo-helper
 
 override_dh_auto_test:
 	go test ./...
@@ -17,6 +18,7 @@ override_dh_auto_test:
 override_dh_auto_install:
 	install -D -m 0755 build/proxilens-ui debian/tmp/usr/bin/proxilens-ui
 	install -D -m 0755 build/proxilens-wake-agent debian/tmp/usr/bin/proxilens-wake-agent
+	install -D -m 0755 build/proxilens-sudo-helper debian/tmp/usr/lib/proxilens/proxilens-sudo-helper
 	install -D -m 0644 static/icons/proxilens-512px.png debian/tmp/usr/share/icons/hicolor/512x512/apps/proxilens.png
 	install -D -m 0644 packaging/debian/proxilens.desktop debian/tmp/usr/share/applications/proxilens.desktop
 	install -D -m 0644 packaging/debian/proxilens-wake-agent.service debian/tmp/usr/lib/systemd/user/proxilens-wake-agent.service

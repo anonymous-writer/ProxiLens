@@ -1,3 +1,9 @@
+proxilens (2.1.0-1) unstable; urgency=medium
+
+  * Add optional Duo-protected sudo authentication with a configurable approval window.
+
+ -- ProxiLens Maintainers <maintainers@example.invalid>  Tue, 24 Nov 2026 09:00:00 +0100
+
 proxilens (1.0.0-1) unstable; urgency=medium
 
   * Initial Debian package with UI, user wake agent and system-wide GNOME extension.

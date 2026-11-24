@@ -71,6 +71,7 @@ jobs:
         run: |
           mkdir -p dist
           go build -trimpath -o dist/proxilens-wake-agent ./cmd/proxilens-wake-agent
+          go build -trimpath -o dist/proxilens-sudo-helper ./cmd/proxilens-sudo-helper
           go build -trimpath -o dist/proxilens-ui .
 
       - name: Upload build artifact

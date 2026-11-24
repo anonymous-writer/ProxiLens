@@ -14,7 +14,9 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/user"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -213,6 +215,117 @@ func Run() error {
 		widget.NewSeparator(), container.NewVBox(databaseName, dbEntry), saveButton, saveStatus,
 	)
 	settingsCard := widget.NewCard("Authentifizierung", "Direkte Duo-Push-Authentifizierung", duoFields)
+
+	// sudo security is deliberately separate from GNOME session unlock.
+	sudoEnabled := widget.NewCheck(i18n.Translations(lang)["sudoEnable"], nil)
+	sudoDuration := widget.NewSelect([]string{"5", "10", "15", "30", "60"}, nil)
+	sudoDuration.SetSelected("15")
+	sudoStatus := widget.NewLabel(i18n.Translations(lang)["sudoNotConfigured"])
+	sudoDurationLabel := widget.NewLabel(i18n.Translations(lang)["sudoDuration"])
+	sudoPasswordNote := widget.NewLabel(i18n.Translations(lang)["sudoPasswordNote"])
+	sudoApply := widget.NewButtonWithIcon(i18n.Translations(lang)["sudoApply"], theme.SettingsIcon(), nil)
+	type sudoStatusData struct {
+		Enabled     bool `json:"enabled"`
+		DurationMin int  `json:"duration_minutes"`
+	}
+	if data, readErr := os.ReadFile("/etc/proxilens/sudo-status.json"); readErr == nil {
+		var state sudoStatusData
+		if json.Unmarshal(data, &state) == nil {
+			sudoEnabled.SetChecked(state.Enabled)
+			if state.DurationMin > 0 {
+				sudoDuration.SetSelected(fmt.Sprintf("%d", state.DurationMin))
+			}
+			if state.Enabled {
+				sudoStatus.SetText(i18n.Translations(lang)["sudoActive"] + fmt.Sprintf(" (%d min)", state.DurationMin))
+			}
+		}
+	}
+	sudoApply.OnTapped = func() {
+		helper := "/usr/lib/proxilens/proxilens-sudo-helper"
+		if _, statErr := os.Stat(helper); statErr != nil {
+			dialog.ShowError(fmt.Errorf("%s: %w", i18n.Translations(lang)["sudoHelperMissing"], statErr), w)
+			return
+		}
+		minutes, parseErr := strconv.Atoi(sudoDuration.Selected)
+		if parseErr != nil || minutes < 1 || minutes > 120 {
+			dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["sudoDurationInvalid"]), w)
+			return
+		}
+		sudoApply.Disable()
+		sudoEnabled.Disable()
+		sudoDuration.Disable()
+		sudoStatus.SetText(i18n.Translations(lang)["sudoApplying"])
+		enableSudo := sudoEnabled.Checked
+		sudoConfigSnapshot := cfg
+		go func() {
+			var cmd *exec.Cmd
+			if enableSudo {
+				local, userErr := user.Current()
+				if userErr != nil {
+					fyne.Do(func() {
+						sudoApply.Enable()
+						sudoEnabled.Enable()
+						sudoDuration.Enable()
+						sudoStatus.SetText(i18n.Translations(lang)["sudoFailed"])
+						dialog.ShowError(userErr, w)
+					})
+					return
+				}
+				if sudoConfigSnapshot.DuoIKey == "" || sudoConfigSnapshot.DuoSKey == "" || sudoConfigSnapshot.DuoHost == "" || sudoConfigSnapshot.DuoUsername == "" {
+					fyne.Do(func() {
+						sudoApply.Enable()
+						sudoEnabled.Enable()
+						sudoDuration.Enable()
+						sudoStatus.SetText(i18n.Translations(lang)["sudoNeedsDuo"])
+						dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["sudoNeedsDuo"]), w)
+					})
+					return
+				}
+				payload, marshalErr := json.Marshal(map[string]any{
+					"enabled": true, "duration_minutes": minutes,
+					"ikey": sudoConfigSnapshot.DuoIKey, "skey": sudoConfigSnapshot.DuoSKey, "host": sudoConfigSnapshot.DuoHost,
+					"username": sudoConfigSnapshot.DuoUsername, "local_user": local.Username,
+					"push_type": "ProxiLens sudo approval",
+				})
+				if marshalErr != nil {
+					fyne.Do(func() {
+						sudoApply.Enable()
+						sudoEnabled.Enable()
+						sudoDuration.Enable()
+						dialog.ShowError(marshalErr, w)
+					})
+					return
+				}
+				cmd = exec.Command("pkexec", helper, "configure")
+				cmd.Stdin = bytes.NewReader(payload)
+			} else {
+				cmd = exec.Command("pkexec", helper, "disable")
+			}
+			out, runErr := cmd.CombinedOutput()
+			fyne.Do(func() {
+				sudoApply.Enable()
+				sudoEnabled.Enable()
+				sudoDuration.Enable()
+				if runErr != nil {
+					sudoStatus.SetText(i18n.Translations(lang)["sudoFailed"])
+					dialog.ShowError(fmt.Errorf("%s\n%s", runErr, strings.TrimSpace(string(out))), w)
+					return
+				}
+				if enableSudo {
+					sudoStatus.SetText(i18n.Translations(lang)["sudoActive"] + fmt.Sprintf(" (%d min)", minutes))
+				} else {
+					sudoStatus.SetText(i18n.Translations(lang)["sudoDisabled"])
+				}
+				dialog.ShowInformation(i18n.Translations(lang)["sudoTitle"], strings.TrimSpace(string(out)), w)
+			})
+		}()
+	}
+	sudoCard := widget.NewCard(i18n.Translations(lang)["sudoTitle"], i18n.Translations(lang)["sudoSubtitle"], container.NewVBox(
+		sudoEnabled,
+		sudoDurationLabel, sudoDuration,
+		sudoPasswordNote,
+		sudoStatus, sudoApply,
+	))
 	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -352,6 +465,11 @@ func Run() error {
 		duoValue.SetText(t["duoReady"])
 		statusCard.Title, statusCard.Subtitle = t["statusTitle"], t["statusSubtitle"]
 		settingsCard.Title, settingsCard.Subtitle = t["settingsTitle"], t["settingsSubtitle"]
+		sudoCard.Title, sudoCard.Subtitle = t["sudoTitle"], t["sudoSubtitle"]
+		sudoEnabled.SetText(t["sudoEnable"])
+		sudoApply.SetText(t["sudoApply"])
+		sudoDurationLabel.SetText(t["sudoDuration"])
+		sudoPasswordNote.SetText(t["sudoPasswordNote"])
 		setupCard.Title, setupCard.Subtitle = t["setupTitle"], t["setupSubtitle"]
 		saveButton.SetText(t["save"])
 		checkButton.SetText(t["check"])
@@ -398,14 +516,16 @@ func Run() error {
 		// new language immediately (canvas.Refresh alone is not sufficient).
 		statusCard.Refresh()
 		settingsCard.Refresh()
+		sudoCard.Refresh()
 		setupCard.Refresh()
 		languageSelect.PlaceHolder = t["languageSelectPlaceholder"]
 		languageSelect.Refresh()
 		for _, obj := range []fyne.CanvasObject{
-			statusCard, settingsCard, setupCard, headerRow, footer,
+			statusCard, settingsCard, sudoCard, setupCard, headerRow, footer,
 			subtitle, languageSelect, topRight, sessionValue, authValue, duoValue,
 			sessionName, authName, duoName,
 			databaseName, saveButton, saveStatus, checkButton, pushTextTitle, pushTextLabel, pushTypeEntry,
+			sudoDurationLabel, sudoPasswordNote, sudoStatus, sudoDuration, sudoEnabled, sudoApply,
 			gnomeInstallButton, gnomeInstallStatus, serviceInstallButton, serviceInstallStatus,
 			githubStatus,
 		} {
@@ -418,7 +538,7 @@ func Run() error {
 		headerRow,
 		footer,
 		nil, nil,
-		container.NewVScroll(container.NewVBox(statusCard, setupCard, settingsCard, checkButton)),
+		container.NewVScroll(container.NewVBox(statusCard, setupCard, settingsCard, sudoCard, checkButton)),
 	)
 	w.SetContent(container.NewPadded(content))
 
