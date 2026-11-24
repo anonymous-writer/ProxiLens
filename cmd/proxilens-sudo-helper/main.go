@@ -427,6 +427,10 @@ func processSessionID() (int, error) {
 }
 
 func duoOnlyPAM(contents, localUser string) string {
+	// An already-installed Duo-only stack is idempotent.
+	if strings.Contains(contents, pamPasswordBypassMarker) && strings.Contains(contents, pamMarker) {
+		return contents
+	}
 	// Remove previous ProxiLens lines and replace Ubuntu's password stack
 	// with the Duo-only gate. Account and session policy remain untouched.
 	contents = removePAMLine(contents)
@@ -460,6 +464,29 @@ func safeRootFile(path string, mode os.FileMode) bool {
 	}
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	return ok && stat.Uid == 0
+}
+
+// restoreCommonAuth reverses the legacy Duo-only PAM transformation when no
+// pre-ProxiLens backup exists. It removes only ProxiLens-owned directives and
+// restores Ubuntu's standard common-auth include.
+func restoreCommonAuth(contents string) string {
+	lines := strings.Split(contents, "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == pamPasswordBypassMarker {
+			continue
+		}
+		if strings.HasPrefix(trimmed, "auth [success=1 default=ignore] pam_succeed_if.so user = ") {
+			continue
+		}
+		if trimmed == "auth substack common-auth" {
+			out = append(out, "@include common-auth")
+			continue
+		}
+		out = append(out, line)
+	}
+	return strings.Join(out, "\n")
 }
 
 func removePAMLine(contents string) string {

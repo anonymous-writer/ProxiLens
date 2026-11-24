@@ -63,3 +63,17 @@ func TestAuthenticationSessionScopeRejectsInvalidLogindID(t *testing.T) {
 		t.Fatal("expected invalid logind session ID to be rejected")
 	}
 }
+
+func TestRestoreCommonAuthReversesDuoOnlyPAM(t *testing.T) {
+	input := "auth sufficient pam_rootok.so\n" + pamPasswordBypassMarker + "\nauth [success=1 default=ignore] pam_succeed_if.so user = michael\nauth substack common-auth\n" + pamMarker + "\nauth required pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth\n@include common-account\n"
+	got := restoreCommonAuth(removePAMLine(input))
+	if !strings.Contains(got, "@include common-auth") {
+		t.Fatalf("common-auth include was not restored:\\n%s", got)
+	}
+	if strings.Contains(got, pamPasswordBypassMarker) || strings.Contains(got, "pam_succeed_if.so") || strings.Contains(got, "auth substack common-auth") {
+		t.Fatalf("ProxiLens Duo-only directives remain after restore:\\n%s", got)
+	}
+	if !strings.Contains(got, "@include common-account") {
+		t.Fatalf("unrelated PAM directives were not preserved:\\n%s", got)
+	}
+}
