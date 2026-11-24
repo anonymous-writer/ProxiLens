@@ -30,7 +30,7 @@ const (
 	statusPath  = "/etc/proxilens/sudo-status.json"
 	pamPath     = "/etc/pam.d/sudo"
 	pamMarker   = "# ProxiLens sudo Duo authentication"
-	pamLine     = pamMarker + "\nauth required pam_exec.so quiet seteuid /usr/lib/proxilens/proxilens-sudo-helper pam-auth"
+	pamLine     = pamMarker + "\nauth required pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth"
 	sudoersPath = "/etc/sudoers.d/proxilens"
 	helperDir   = "/run/proxilens/sudo-grants"
 )
@@ -387,10 +387,18 @@ func processSessionID() (int, error) {
 }
 
 func addPAMLine(contents string) string {
-	if strings.Contains(contents, pamMarker) {
-		return contents
-	}
 	lines := strings.Split(contents, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) == pamMarker {
+			// Migrate an existing installation that used "seteuid". The
+			// sudo PAM stack invokes pam_exec as root; dropping the effective
+			// UID makes the root-only helper fail before it can authenticate.
+			if i+1 < len(lines) && strings.Contains(lines[i+1], "proxilens-sudo-helper pam-auth") {
+				lines[i+1] = strings.TrimPrefix(pamLine, pamMarker+"\n")
+			}
+			return strings.Join(lines, "\n")
+		}
+	}
 	for i, line := range lines {
 		if strings.TrimSpace(line) == "@include common-auth" {
 			insert := []string{pamMarker, strings.TrimPrefix(pamLine, pamMarker+"\n")}
