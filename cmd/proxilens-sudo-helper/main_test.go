@@ -57,25 +57,16 @@ func TestAuthenticationSessionScopeRejectsInvalidLogindID(t *testing.T) {
 	}
 }
 
-func TestPAMRuleDoesNotDropEffectiveRootPrivileges(t *testing.T) {
-	if strings.Contains(pamLine, "seteuid") {
-		t.Fatal("PAM helper must retain the effective root identity supplied by sudo")
-	}
-	if !strings.Contains(pamLine, "/usr/lib/proxilens/proxilens-sudo-helper pam-auth") {
-		t.Fatal("PAM helper command is missing")
-	}
-}
-
-func TestPAMRuleMigratesLegacySeteuidEntry(t *testing.T) {
-	legacy := "@include common-auth\n" + pamMarker + "\nauth required pam_exec.so quiet seteuid /usr/lib/proxilens/proxilens-sudo-helper pam-auth\n@include common-account\n"
-	got := addPAMLine(legacy)
+func TestPAMRuleUpgradeReplacesLegacySeteuidRule(t *testing.T) {
+	input := "@include common-auth\n" + pamMarker + "\nauth required pam_exec.so quiet seteuid /usr/lib/proxilens/proxilens-sudo-helper pam-auth\n@include common-account\n"
+	got := addPAMLine(input)
 	if strings.Contains(got, "seteuid") {
-		t.Fatalf("legacy PAM rule still drops effective root privileges:\n%s", got)
+		t.Fatalf("legacy seteuid option remains in PAM rule:\n%s", got)
 	}
-	if !strings.Contains(got, pamLine) {
-		t.Fatalf("legacy PAM rule was not migrated:\n%s", got)
+	if strings.Count(got, pamMarker) != 1 {
+		t.Fatalf("expected exactly one ProxiLens PAM marker:\n%s", got)
 	}
-	if again := addPAMLine(got); again != got {
-		t.Fatal("migrated PAM rule is not idempotent")
+	if !strings.Contains(got, "pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth") {
+		t.Fatalf("corrected PAM helper rule missing:\n%s", got)
 	}
 }

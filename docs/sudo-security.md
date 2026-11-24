@@ -47,18 +47,3 @@ If the helper cannot run, remove only the ProxiLens marker and its immediately
 following `pam_exec.so` line from `/etc/pam.d/sudo`, then remove
 `/etc/sudoers.d/proxilens`. Do not replace the entire PAM file with a generic
 copy; preserve the host's other authentication rules.
-
-## PAM helper privilege handling
-
-The sudo PAM hook intentionally does not use `pam_exec.so seteuid`. The hook
-runs from sudo's root-owned PAM stack, so the helper retains the effective
-root identity required to read `/etc/proxilens/sudo.json` and maintain
-root-owned, session-scoped grants.
-
-When an existing installation is reconfigured, `addPAMLine` migrates the
-previous hook containing `seteuid` to the corrected hook. After installing
-an updated package, open ProxiLens and press **Sudo-Schutz übernehmen** again
-to apply the updated PAM rule and refresh the protected configuration.
-
-The helper continues to reject calls unless `PAM_SERVICE=sudo` and
-`PAM_TYPE=auth` are present.

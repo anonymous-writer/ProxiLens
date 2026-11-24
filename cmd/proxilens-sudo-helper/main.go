@@ -387,18 +387,11 @@ func processSessionID() (int, error) {
 }
 
 func addPAMLine(contents string) string {
+	// Replace any previously installed ProxiLens rule, including the old
+	// seteuid variant. Merely detecting the marker would leave broken rules
+	// in place on upgrades.
+	contents = removePAMLine(contents)
 	lines := strings.Split(contents, "\n")
-	for i, line := range lines {
-		if strings.TrimSpace(line) == pamMarker {
-			// Migrate an existing installation that used "seteuid". The
-			// sudo PAM stack invokes pam_exec as root; dropping the effective
-			// UID makes the root-only helper fail before it can authenticate.
-			if i+1 < len(lines) && strings.Contains(lines[i+1], "proxilens-sudo-helper pam-auth") {
-				lines[i+1] = strings.TrimPrefix(pamLine, pamMarker+"\n")
-			}
-			return strings.Join(lines, "\n")
-		}
-	}
 	for i, line := range lines {
 		if strings.TrimSpace(line) == "@include common-auth" {
 			insert := []string{pamMarker, strings.TrimPrefix(pamLine, pamMarker+"\n")}
