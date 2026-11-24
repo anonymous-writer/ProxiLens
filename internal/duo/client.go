@@ -190,11 +190,23 @@ func (c Config) Check(ctx context.Context) error {
 }
 
 func (c Config) Push(ctx context.Context, progress func(string)) error {
+	return c.PushWithGuard(ctx, progress, nil)
+}
+
+// PushWithGuard invokes beforePush immediately before creating the Duo
+// authentication transaction. Callers can use it to re-check that the
+// protected session still requires authentication after any preparatory wait.
+func (c Config) PushWithGuard(ctx context.Context, progress func(string), beforePush func() error) error {
 	pushType := strings.TrimSpace(c.PushType)
 	if pushType == "" {
 		pushType = "ProxiLens"
 	}
 	p := url.Values{"username": {c.Username}, "factor": {"push"}, "device": {"auto"}, "async": {"1"}, "type": {pushType}}
+	if beforePush != nil {
+		if err := beforePush(); err != nil {
+			return err
+		}
+	}
 	raw, err := c.request(ctx, http.MethodPost, "/auth/v2/auth", p)
 	if err != nil {
 		return err
