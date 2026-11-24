@@ -8,7 +8,7 @@ The optional sudo integration is separate from GNOME session unlocking. When ena
 - A Duo deny, timeout, malformed response, missing configuration, or network failure denies sudo (fail closed). There is no password fallback.
 - Other local users retain the original PAM password stack.
 
-The root-only helper is installed at `/usr/lib/proxilens/proxilens-sudo-helper`. Duo credentials are stored in `/etc/proxilens/sudo.json` with mode 0600. The original `/etc/pam.d/sudo` is backed up to `/etc/proxilens/sudo-pam.original` with mode 0600 and restored on deactivation.
+The root-only helper is installed at `/usr/lib/proxilens/proxilens-sudo-helper`. Duo credentials are stored in `/etc/proxilens/sudo.json` with mode 0600. The original `/etc/pam.d/sudo` and Polkit PAM stack are backed up under `/etc/proxilens/` with mode 0600 and restored on deactivation. When `/etc/pam.d/polkit-1` did not previously exist, ProxiLens derives an override from `/usr/lib/pam.d/polkit-1` and removes that override again on deactivation; the vendor file is never modified. Sudo and graphical Polkit authentication share one grant bound to the unique active logind desktop session, UID and expiry. If logind cannot identify exactly one active desktop session, authentication fails closed.
 
 Activation validates the Duo API before modifying PAM. It replaces the `@include common-auth` entry with a conditional PAM substack: only the configured user skips Ubuntu password authentication and is gated by Duo; other users retain the normal password stack. Account and session rules remain intact. It manages only `/etc/sudoers.d/proxilens`. Keep a second root-capable recovery session open during first activation and verify the Duo flow before closing it.
 
@@ -20,4 +20,4 @@ If sudo authentication behaves unexpectedly, use an already-open root-capable se
 /usr/lib/proxilens/proxilens-sudo-helper disable
 ```
 
-Do not manually edit `/etc/pam.d/sudo` while activation or deactivation is running.
+Do not manually edit `/etc/pam.d/sudo` or `/etc/pam.d/polkit-1` while activation or deactivation is running.

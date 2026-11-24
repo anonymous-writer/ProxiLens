@@ -77,3 +77,27 @@ func TestRestoreCommonAuthReversesDuoOnlyPAM(t *testing.T) {
 		t.Fatalf("unrelated PAM directives were not preserved:\\n%s", got)
 	}
 }
+
+func TestPAMAuthServicesShareTheSameGrantPath(t *testing.T) {
+	for _, service := range []string{"sudo", "polkit-1"} {
+		if !validPAMAuthService(service, "auth") {
+			t.Errorf("service %q must be accepted", service)
+		}
+	}
+	for _, service := range []string{"login", "gdm-password", "su", ""} {
+		if validPAMAuthService(service, "auth") {
+			t.Errorf("service %q must be rejected", service)
+		}
+	}
+	if validPAMAuthService("sudo", "account") || validPAMAuthService("polkit-1", "session") {
+		t.Fatal("non-auth PAM phases must be rejected")
+	}
+}
+
+func TestDuoOnlyPAMCanBeAppliedToPolkitTemplate(t *testing.T) {
+	template := "#%PAM-1.0\n@include common-auth\n@include common-account\n@include common-password\nsession required pam_env.so\n@include common-session-noninteractive\n"
+	got := duoOnlyPAM(template, "michael")
+	if !strings.Contains(got, "pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth") || !strings.Contains(got, "@include common-account") || !strings.Contains(got, "@include common-session-noninteractive") {
+		t.Fatalf("Polkit auth hook or non-auth stack missing:\n%s", got)
+	}
+}

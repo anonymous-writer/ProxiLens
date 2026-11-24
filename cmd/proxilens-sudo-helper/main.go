@@ -29,7 +29,11 @@ const (
 	configPath              = "/etc/proxilens/sudo.json"
 	statusPath              = "/etc/proxilens/sudo-status.json"
 	pamBackupPath           = "/etc/proxilens/sudo-pam.original"
+	polkitPAMBackupPath     = "/etc/proxilens/polkit-1-pam.original"
+	polkitPAMWasAbsentPath  = "/etc/proxilens/polkit-1-pam.was-absent"
 	pamPath                 = "/etc/pam.d/sudo"
+	polkitPAMPath           = "/etc/pam.d/polkit-1"
+	polkitPAMTemplatePath   = "/usr/lib/pam.d/polkit-1"
 	pamMarker               = "# ProxiLens sudo Duo authentication"
 	pamPasswordBypassMarker = "# ProxiLens Duo-only: skip Ubuntu password only for the configured user."
 	pamLine                 = pamMarker + "\nauth required pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth"
@@ -139,6 +143,33 @@ func configure() error {
 	if !strings.Contains(pamUpdated, pamMarker) || strings.Contains(pamUpdated, "@include common-auth") || !strings.Contains(pamUpdated, "auth substack common-auth") {
 		return errors.New("Duo-only-PAM-Regel konnte nicht sicher erstellt werden")
 	}
+	// Polkit is a separate PAM service. Prefer an existing /etc override; if
+	// absent, derive it from the vendor template and remember to remove the
+	// override on disable rather than modifying /usr/lib.
+	polkitCurrent, polkitReadErr := os.ReadFile(polkitPAMPath)
+	polkitWasAbsent := errors.Is(polkitReadErr, os.ErrNotExist)
+	if polkitReadErr != nil && !polkitWasAbsent {
+		return fmt.Errorf("Polkit-PAM lesen: %w", polkitReadErr)
+	}
+	if polkitWasAbsent {
+		polkitCurrent, err = os.ReadFile(polkitPAMTemplatePath)
+		if err != nil {
+			return fmt.Errorf("Polkit-PAM-Vorlage lesen: %w", err)
+		}
+	}
+	polkitBase := removePAMLine(string(polkitCurrent))
+	if backup, e := os.ReadFile(polkitPAMBackupPath); e == nil {
+		if !safeRootFile(polkitPAMBackupPath, 0600) {
+			return errors.New("Polkit-PAM-Sicherung ist unsicher")
+		}
+		polkitBase = string(backup)
+	} else if !errors.Is(e, os.ErrNotExist) {
+		return e
+	}
+	polkitUpdated := duoOnlyPAM(polkitBase, cfg.LocalUser)
+	if !strings.Contains(polkitUpdated, pamMarker) || strings.Contains(polkitUpdated, "@include common-auth") || !strings.Contains(polkitUpdated, "auth substack common-auth") {
+		return errors.New("Polkit-Duo-PAM-Regel konnte nicht sicher erstellt werden")
+	}
 	sudoersUpdated := []byte(fmt.Sprintf("# Managed by ProxiLens; do not edit.\nDefaults:%s timestamp_timeout=0\n", cfg.LocalUser))
 	if err := validateSudoers(sudoersUpdated); err != nil {
 		return err
@@ -164,6 +195,21 @@ func configure() error {
 	if pamBackupErr != nil && !errors.Is(pamBackupErr, os.ErrNotExist) {
 		return pamBackupErr
 	}
+	oldPolkitPAM, polkitPAMErr := os.ReadFile(polkitPAMPath)
+	polkitPAMExisted := polkitPAMErr == nil
+	if polkitPAMErr != nil && !errors.Is(polkitPAMErr, os.ErrNotExist) {
+		return polkitPAMErr
+	}
+	oldPolkitBackup, polkitBackupErr := os.ReadFile(polkitPAMBackupPath)
+	polkitBackupExisted := polkitBackupErr == nil
+	if polkitBackupErr != nil && !errors.Is(polkitBackupErr, os.ErrNotExist) {
+		return polkitBackupErr
+	}
+	oldPolkitAbsent, polkitAbsentErr := os.ReadFile(polkitPAMWasAbsentPath)
+	polkitAbsentExisted := polkitAbsentErr == nil
+	if polkitAbsentErr != nil && !errors.Is(polkitAbsentErr, os.ErrNotExist) {
+		return polkitAbsentErr
+	}
 
 	rollback := func() {
 		restoreFile(configPath, oldConfig, configExisted, 0600)
@@ -171,6 +217,9 @@ func configure() error {
 		restoreFile(sudoersPath, oldSudoers, sudoersExisted, 0440)
 		restoreFile(pamPath, pamCurrent, true, 0644)
 		restoreFile(pamBackupPath, oldPAMBackup, pamBackupExisted, 0600)
+		restoreFile(polkitPAMPath, oldPolkitPAM, polkitPAMExisted, 0644)
+		restoreFile(polkitPAMBackupPath, oldPolkitBackup, polkitBackupExisted, 0600)
+		restoreFile(polkitPAMWasAbsentPath, oldPolkitAbsent, polkitAbsentExisted, 0600)
 	}
 	cfg.Enabled = true
 	if err := ensureProtectedDir(filepath.Dir(configPath), 0755); err != nil {
@@ -198,11 +247,27 @@ func configure() error {
 			return fmt.Errorf("ursprüngliche PAM-Konfiguration sichern: %w", err)
 		}
 	}
+	if !polkitBackupExisted {
+		if err := atomicWrite(polkitPAMBackupPath, []byte(polkitBase), 0600); err != nil {
+			rollback()
+			return fmt.Errorf("ursprüngliche Polkit-PAM-Konfiguration sichern: %w", err)
+		}
+		if polkitWasAbsent {
+			if err := atomicWrite(polkitPAMWasAbsentPath, []byte("yes\n"), 0600); err != nil {
+				rollback()
+				return fmt.Errorf("Polkit-PAM-Zustand sichern: %w", err)
+			}
+		}
+	}
+	if err := atomicWrite(polkitPAMPath, []byte(polkitUpdated), 0644); err != nil {
+		rollback()
+		return fmt.Errorf("Polkit-PAM aktualisieren: %w", err)
+	}
 	if err := atomicWrite(pamPath, []byte(pamUpdated), 0644); err != nil {
 		rollback()
 		return fmt.Errorf("PAM-Konfiguration aktualisieren: %w", err)
 	}
-	fmt.Println("ProxiLens sudo-Schutz wurde aktiviert.")
+	fmt.Println("ProxiLens Duo-Schutz für sudo und grafische Polkit-Dialoge wurde aktiviert.")
 	return nil
 }
 
@@ -231,13 +296,29 @@ func disable() error {
 	} else {
 		return err
 	}
+	if backup, err := os.ReadFile(polkitPAMBackupPath); err == nil {
+		if !safeRootFile(polkitPAMBackupPath, 0600) {
+			return errors.New("Polkit-PAM-Sicherung ist nicht root-geschützt; Deaktivierung abgebrochen")
+		}
+		if _, absentErr := os.Stat(polkitPAMWasAbsentPath); absentErr == nil {
+			if err := os.Remove(polkitPAMPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("Polkit-PAM-Override entfernen: %w", err)
+			}
+		} else if err := atomicWrite(polkitPAMPath, backup, 0644); err != nil {
+			return fmt.Errorf("Polkit-PAM wiederherstellen: %w", err)
+		}
+		_ = os.Remove(polkitPAMBackupPath)
+		_ = os.Remove(polkitPAMWasAbsentPath)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	if err := os.Remove(sudoersPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("sudoers-Regel entfernen: %w", err)
 	}
 	_ = os.Remove(configPath)
 	_ = os.Remove(statusPath)
 	_ = os.RemoveAll(helperDir)
-	fmt.Println("ProxiLens sudo-Schutz wurde deaktiviert und die ursprüngliche PAM-Passwortregel wiederhergestellt.")
+	fmt.Println("ProxiLens Duo-Schutz wurde deaktiviert; die ursprünglichen PAM-Regeln wurden wiederhergestellt.")
 	return nil
 }
 
@@ -254,9 +335,14 @@ func printStatus() error {
 	return err
 }
 
+func validPAMAuthService(service, pamType string) bool {
+	return (service == "sudo" || service == "polkit-1") && pamType == "auth"
+}
+
 func pamAuth() error {
-	if os.Getenv("PAM_SERVICE") != "sudo" || os.Getenv("PAM_TYPE") != "auth" {
-		return errors.New("PAM-Aufruf außerhalb des sudo-Authentifizierungsstapels verweigert")
+	service := os.Getenv("PAM_SERVICE")
+	if !validPAMAuthService(service, os.Getenv("PAM_TYPE")) {
+		return errors.New("PAM-Aufruf außerhalb des Sudo-/Polkit-Authentifizierungsstapels verweigert")
 	}
 	username := strings.TrimSpace(os.Getenv("PAM_USER"))
 	tty := strings.TrimSpace(os.Getenv("PAM_TTY"))
@@ -320,7 +406,7 @@ func pamAuth() error {
 	if username != cfg.LocalUser {
 		return nil // Die ProxiLens-Regel gilt nur für den Benutzer, der sie aktiviert hat.
 	}
-	scope, err := authenticationSessionScope(tty, strings.TrimSpace(os.Getenv("XDG_SESSION_ID")))
+	scope, err := activeLogindSessionScope(uid)
 	if err != nil {
 		return errors.New("PAM-Sitzung konnte nicht eindeutig zugeordnet werden")
 	}
@@ -380,10 +466,44 @@ func validLocalUsername(name string) bool {
 	return true
 }
 
-// authenticationSessionScope prefers the logind session ID exported by
-// pam_systemd. This shares the approval across terminals in one GNOME login
-// session. On systems without XDG_SESSION_ID, it falls back to the kernel
-// process-session ID plus PAM_TTY, preventing cross-terminal reuse.
+// activeLogindSessionScope resolves the single active foreground desktop
+// session for this UID. It works for both sudo terminals and graphical Polkit
+// prompts, whose PAM environment does not reliably contain XDG_SESSION_ID.
+// Ambiguous multi-seat/multi-session cases fail closed.
+func activeLogindSessionScope(uid int) (string, error) {
+	if uid <= 0 {
+		return "", errors.New("invalid uid")
+	}
+	out, err := exec.Command("/usr/bin/loginctl", "show-user", strconv.Itoa(uid), "-p", "Sessions", "--value").Output()
+	if err != nil {
+		return "", fmt.Errorf("logind user sessions unavailable: %w", err)
+	}
+	ids := strings.Fields(string(out))
+	var active []string
+	for _, id := range ids {
+		if id == "" || strings.ContainsAny(id, "/\\") {
+			continue
+		}
+		props, e := exec.Command("/usr/bin/loginctl", "show-session", id, "-p", "User", "-p", "Seat", "-p", "Type", "-p", "Class", "-p", "State", "--value").Output()
+		if e != nil {
+			continue
+		}
+		f := strings.Split(strings.TrimSpace(string(props)), "\n")
+		if len(f) != 5 {
+			continue
+		}
+		if f[0] == strconv.Itoa(uid) && f[1] == "seat0" && (f[2] == "wayland" || f[2] == "x11") && f[3] == "user" && f[4] == "active" {
+			active = append(active, id)
+		}
+	}
+	if len(active) != 1 {
+		return "", fmt.Errorf("expected exactly one active desktop session, found %d", len(active))
+	}
+	return "logind:" + active[0], nil
+}
+
+// authenticationSessionScope is retained for unit tests and rejects terminal-only
+// fallback: a TTY is not a stable cross-service desktop-session identity.
 func authenticationSessionScope(tty, logindID string) (string, error) {
 	if logindID != "" {
 		for _, r := range logindID {
