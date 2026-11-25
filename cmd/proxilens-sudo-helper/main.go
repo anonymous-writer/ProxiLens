@@ -91,6 +91,10 @@ func main() {
 	switch os.Args[1] {
 	case "configure":
 		err = configure()
+	case "configure-sudo-test":
+		err = configureSudoTest()
+	case "disable-sudo-test":
+		err = disableSudoTest()
 	case "disable":
 		err = disable()
 	case "status":
@@ -132,6 +136,61 @@ func logPAMDiagnostic(stage string, err error) {
 func fatal(message string) {
 	fmt.Fprintln(os.Stderr, "ProxiLens:", message)
 	os.Exit(1)
+}
+
+
+// configureSudoTest enables the experimental Duo-first PAM flow for sudo only.
+// It deliberately does not touch Polkit PAM or the Polkit systemd sandbox.
+func configureSudoTest() error {
+	dec := json.NewDecoder(io.LimitReader(os.Stdin, 16*1024))
+	dec.DisallowUnknownFields()
+	var cfg config
+	if err := dec.Decode(&cfg); err != nil { return fmt.Errorf("Konfiguration konnte nicht gelesen werden: %w", err) }
+	if !cfg.Enabled { return errors.New("Aktivierung wurde nicht bestätigt") }
+	if cfg.DurationMin < 1 || cfg.DurationMin > 120 { return errors.New("Freigabedauer muss zwischen 1 und 120 Minuten liegen") }
+	if !validLocalUsername(cfg.LocalUser) { return errors.New("lokaler Ubuntu-Benutzername fehlt oder ist ungültig") }
+	if strings.TrimSpace(cfg.PushType) == "" { cfg.PushType = "ProxiLens sudo approval" }
+	duoCfg := duo.Config{IKey: cfg.IKey, SKey: cfg.SKey, Host: cfg.Host, Username: cfg.Username, PushType: cfg.PushType}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second); defer cancel()
+	if err := duoCfg.Check(ctx); err != nil { return fmt.Errorf("Duo-Konfiguration konnte nicht geprüft werden: %w", err) }
+
+	current, err := os.ReadFile(pamPath); if err != nil { return err }
+	base := removePAMLine(string(current))
+	if backup, e := os.ReadFile(pamBackupPath); e == nil {
+		if !safeRootFile(pamBackupPath, 0600) { return errors.New("sudo-PAM-Sicherung ist nicht root-geschützt") }
+		base = string(backup)
+	} else if !errors.Is(e, os.ErrNotExist) { return e }
+	if !strings.Contains(base, "@include common-auth") { return errors.New("sudo-PAM enthält keine erwartete common-auth-Zeile; keine Änderung") }
+	updated := duoOnlyPAM(base, cfg.LocalUser)
+	if !strings.Contains(updated, pamMarker) || !strings.Contains(updated, "auth substack common-auth") { return errors.New("sudo-PAM-Regel konnte nicht sicher erstellt werden") }
+	if err := ensureProtectedDir(filepath.Dir(configPath), 0755); err != nil { return err }
+	if err := ensureProtectedDir(helperDir, 0700); err != nil { return err }
+	if _, err := os.Stat(pamBackupPath); errors.Is(err, os.ErrNotExist) {
+		if err := atomicWrite(pamBackupPath, []byte(base), 0600); err != nil { return err }
+	} else if err != nil { return err }
+	if err := writeJSON(configPath, cfg, 0600); err != nil { return err }
+	if err := writeJSON(statusPath, status{Enabled:true, DurationMin:cfg.DurationMin, LocalUser:cfg.LocalUser}, 0644); err != nil { return err }
+	sudoers := []byte(fmt.Sprintf("# Managed by ProxiLens sudo-only test; do not edit.\nDefaults:%s timestamp_timeout=0\n", cfg.LocalUser))
+	if err := validateSudoers(sudoers); err != nil { return err }
+	if err := atomicWrite(sudoersPath, sudoers, 0440); err != nil { return err }
+	if err := atomicWrite(pamPath, []byte(updated), 0644); err != nil { return err }
+	fmt.Println("Experimenteller Duo-Schutz wurde nur für sudo aktiviert. Polkit blieb unverändert.")
+	return nil
+}
+
+// disableSudoTest restores only sudo PAM and removes the sudo-only test policy.
+func disableSudoTest() error {
+	backup, err := os.ReadFile(pamBackupPath)
+	if err != nil { return fmt.Errorf("sudo-PAM-Sicherung fehlt; sichere Deaktivierung nicht möglich: %w", err) }
+	if !safeRootFile(pamBackupPath, 0600) { return errors.New("sudo-PAM-Sicherung ist nicht root-geschützt") }
+	if err := atomicWrite(pamPath, backup, 0644); err != nil { return err }
+	if err := os.Remove(pamBackupPath); err != nil && !errors.Is(err, os.ErrNotExist) { return err }
+	for _, path := range []string{sudoersPath, configPath, statusPath} {
+		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) { return err }
+	}
+	_ = os.RemoveAll(helperDir)
+	fmt.Println("sudo-PAM wurde wiederhergestellt; Polkit wurde nicht verändert.")
+	return nil
 }
 
 func configure() error {
@@ -456,7 +515,7 @@ func printStatus() error {
 }
 
 func validPAMAuthService(service, pamType string) bool {
-	return (service == "sudo" || service == "polkit-1") && pamType == "auth"
+	return service == "sudo" && pamType == "auth"
 }
 
 func pamAuth() error {

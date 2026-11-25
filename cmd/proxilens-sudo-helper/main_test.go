@@ -79,12 +79,12 @@ func TestRestoreCommonAuthReversesDuoOnlyPAM(t *testing.T) {
 }
 
 func TestPAMAuthServicesShareTheSameGrantPath(t *testing.T) {
-	for _, service := range []string{"sudo", "polkit-1"} {
+	for _, service := range []string{"sudo"} {
 		if !validPAMAuthService(service, "auth") {
 			t.Errorf("service %q must be accepted", service)
 		}
 	}
-	for _, service := range []string{"login", "gdm-password", "su", ""} {
+	for _, service := range []string{"polkit-1", "login", "gdm-password", "su", ""} {
 		if validPAMAuthService(service, "auth") {
 			t.Errorf("service %q must be rejected", service)
 		}

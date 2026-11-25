@@ -60,7 +60,7 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
     (void)pam_get_item(pamh, PAM_TTY, (const void **)&tty);
     (void)pam_get_item(pamh, PAM_RUSER, (const void **)&ruser);
     (void)pam_get_item(pamh, PAM_RHOST, (const void **)&rhost);
-    if (!service || (strcmp(service, "sudo") != 0 && strcmp(service, "polkit-1") != 0)) return PAM_AUTH_ERR;
+    if (!service || strcmp(service, "sudo") != 0) return PAM_AUTH_ERR;
 
     if (send_info(pamh, "ProxiLens: Duo wird geprüft; falls erforderlich wird jetzt ein Push gestartet. Bitte auf dem Smartphone bestätigen.") != PAM_SUCCESS)
         return PAM_AUTH_ERR;
