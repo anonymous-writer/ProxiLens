@@ -1,3 +1,12 @@
+proxilens (2.1.0~beta7) unstable; urgency=medium
+
+  * Document shared 15-minute, login-session-scoped authorization target for sudo and Polkit.
+  * Specify explicit-only Ubuntu password fallback and cancel behavior.
+  * Define trust boundaries and security gates for a future privileged policy service.
+  * Keep all real system-authentication integration disabled; no PAM, Polkit or sudoers changes.
+
+ -- ProxiLens Development <dev@localhost>  Wed, 25 Nov 2026 22:50:00 +0100
+
 proxilens (2.1.0~beta6) unstable; urgency=medium
 
   * Run the development grant broker as an independent per-user process.
