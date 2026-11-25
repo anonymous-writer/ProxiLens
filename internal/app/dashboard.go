@@ -1,22 +1,18 @@
 package app
 
 import (
-	"archive/zip"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"image/color"
 	"image/png"
-	"io"
 	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
-	"os/user"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,6 +28,7 @@ import (
 	"github.com/local/proxilens/internal/buildinfo"
 	"github.com/local/proxilens/internal/configstore"
 	"github.com/local/proxilens/internal/duo"
+	"github.com/local/proxilens/internal/grantsim"
 	"github.com/local/proxilens/internal/i18n"
 	"github.com/local/proxilens/internal/session"
 	staticassets "github.com/local/proxilens/static"
@@ -216,116 +213,56 @@ func Run() error {
 	)
 	settingsCard := widget.NewCard("Authentifizierung", "Direkte Duo-Push-Authentifizierung", duoFields)
 
-	// sudo security is deliberately separate from GNOME session unlock.
-	sudoEnabled := widget.NewCheck(i18n.Translations(lang)["sudoEnable"], nil)
-	sudoDuration := widget.NewSelect([]string{"5", "10", "15", "30", "60"}, nil)
-	sudoDuration.SetSelected("15")
-	sudoStatus := widget.NewLabel(i18n.Translations(lang)["sudoNotConfigured"])
-	sudoDurationLabel := widget.NewLabel(i18n.Translations(lang)["sudoDuration"])
-	sudoPasswordNote := widget.NewLabel(i18n.Translations(lang)["sudoPasswordNote"])
-	sudoApply := widget.NewButtonWithIcon(i18n.Translations(lang)["sudoApply"], theme.SettingsIcon(), nil)
-	type sudoStatusData struct {
-		Enabled     bool `json:"enabled"`
-		DurationMin int  `json:"duration_minutes"`
-	}
-	if data, readErr := os.ReadFile("/etc/proxilens/sudo-status.json"); readErr == nil {
-		var state sudoStatusData
-		if json.Unmarshal(data, &state) == nil {
-			sudoEnabled.SetChecked(state.Enabled)
-			if state.DurationMin > 0 {
-				sudoDuration.SetSelected(fmt.Sprintf("%d", state.DurationMin))
-			}
-			if state.Enabled {
-				sudoStatus.SetText(i18n.Translations(lang)["sudoActive"] + fmt.Sprintf(" (%d min)", state.DurationMin))
-			}
-		}
-	}
-	sudoApply.OnTapped = func() {
-		helper := "/usr/lib/proxilens/proxilens-sudo-helper"
-		if _, statErr := os.Stat(helper); statErr != nil {
-			dialog.ShowError(fmt.Errorf("%s: %w", i18n.Translations(lang)["sudoHelperMissing"], statErr), w)
+	// System authentication integration is intentionally disabled in this safe
+	// development build. ProxiLens must not modify PAM, Polkit, sudoers or
+	// system services while Duo and local grant behavior are being validated.
+	safetyNotice := widget.NewCard("Systemauthentifizierung deaktiviert", "Diese Entwicklungsfassung testet Duo unabhängig. sudo, PAM und Polkit werden nicht verändert.", widget.NewLabel("Es wird keine privilegierte Freigabe erteilt. Die lokale Freigabe ist zunächst nur ein Testzustand und ersetzt keine Ubuntu-Authentifizierung."))
+
+	var simulatedGrant grantsim.Grant
+	grantStatus := widget.NewLabel("Testfreigabe: inaktiv")
+	pushButton := widget.NewButtonWithIcon("Duo Push testen", theme.ConfirmIcon(), nil)
+	grantButton := widget.NewButtonWithIcon("15-Minuten-Freigabe simulieren", theme.InfoIcon(), nil)
+	grantButton.Disable()
+	pushButton.OnTapped = func() {
+		if cfg.DuoIKey == "" || cfg.DuoSKey == "" || cfg.DuoHost == "" || cfg.DuoUsername == "" {
+			dialog.ShowError(fmt.Errorf("Bitte zuerst Duo-Zugangsdaten speichern."), w)
 			return
 		}
-		minutes, parseErr := strconv.Atoi(sudoDuration.Selected)
-		if parseErr != nil || minutes < 1 || minutes > 120 {
-			dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["sudoDurationInvalid"]), w)
-			return
-		}
-		sudoApply.Disable()
-		sudoEnabled.Disable()
-		sudoDuration.Disable()
-		sudoStatus.SetText(i18n.Translations(lang)["sudoApplying"])
-		enableSudo := sudoEnabled.Checked
-		sudoConfigSnapshot := cfg
+		pushButton.Disable()
+		grantButton.Disable()
+		grantStatus.SetText("Duo Push wird gestartet …")
+		pushCfg := duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername, PushType: cfg.DuoPushType}
 		go func() {
-			var cmd *exec.Cmd
-			if enableSudo {
-				local, userErr := user.Current()
-				if userErr != nil {
-					fyne.Do(func() {
-						sudoApply.Enable()
-						sudoEnabled.Enable()
-						sudoDuration.Enable()
-						sudoStatus.SetText(i18n.Translations(lang)["sudoFailed"])
-						dialog.ShowError(userErr, w)
-					})
-					return
-				}
-				if sudoConfigSnapshot.DuoIKey == "" || sudoConfigSnapshot.DuoSKey == "" || sudoConfigSnapshot.DuoHost == "" || sudoConfigSnapshot.DuoUsername == "" {
-					fyne.Do(func() {
-						sudoApply.Enable()
-						sudoEnabled.Enable()
-						sudoDuration.Enable()
-						sudoStatus.SetText(i18n.Translations(lang)["sudoNeedsDuo"])
-						dialog.ShowError(fmt.Errorf("%s", i18n.Translations(lang)["sudoNeedsDuo"]), w)
-					})
-					return
-				}
-				payload, marshalErr := json.Marshal(map[string]any{
-					"enabled": true, "duration_minutes": minutes,
-					"ikey": sudoConfigSnapshot.DuoIKey, "skey": sudoConfigSnapshot.DuoSKey, "host": sudoConfigSnapshot.DuoHost,
-					"username": sudoConfigSnapshot.DuoUsername, "local_user": local.Username,
-					"push_type": "ProxiLens sudo approval",
-				})
-				if marshalErr != nil {
-					fyne.Do(func() {
-						sudoApply.Enable()
-						sudoEnabled.Enable()
-						sudoDuration.Enable()
-						dialog.ShowError(marshalErr, w)
-					})
-					return
-				}
-				cmd = exec.Command("pkexec", helper, "configure")
-				cmd.Stdin = bytes.NewReader(payload)
-			} else {
-				cmd = exec.Command("pkexec", helper, "disable")
-			}
-			out, runErr := cmd.CombinedOutput()
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+			defer cancel()
+			err := pushCfg.Push(ctx, func(message string) {
+				fyne.Do(func() { grantStatus.SetText(message) })
+			})
 			fyne.Do(func() {
-				sudoApply.Enable()
-				sudoEnabled.Enable()
-				sudoDuration.Enable()
-				if runErr != nil {
-					sudoStatus.SetText(i18n.Translations(lang)["sudoFailed"])
-					dialog.ShowError(fmt.Errorf("%s\n%s", runErr, strings.TrimSpace(string(out))), w)
+				pushButton.Enable()
+				if err != nil {
+					grantStatus.SetText("Duo fehlgeschlagen: " + err.Error())
+					dialog.ShowError(err, w)
 					return
 				}
-				if enableSudo {
-					sudoStatus.SetText(i18n.Translations(lang)["sudoActive"] + fmt.Sprintf(" (%d min)", minutes))
-				} else {
-					sudoStatus.SetText(i18n.Translations(lang)["sudoDisabled"])
-				}
-				dialog.ShowInformation(i18n.Translations(lang)["sudoTitle"], strings.TrimSpace(string(out)), w)
+				grantStatus.SetText("Duo bestätigt. Du kannst jetzt eine rein lokale Testfreigabe starten.")
+				grantButton.Enable()
 			})
 		}()
 	}
-	sudoCard := widget.NewCard(i18n.Translations(lang)["sudoTitle"], i18n.Translations(lang)["sudoSubtitle"], container.NewVBox(
-		sudoEnabled,
-		sudoDurationLabel, sudoDuration,
-		sudoPasswordNote,
-		sudoStatus, sudoApply,
-	))
+	grantButton.OnTapped = func() {
+		expires := simulatedGrant.Start(15 * time.Minute)
+		grantStatus.SetText("SIMULATION aktiv bis " + expires.Format("15:04:05") + " – keine Systemberechtigung")
+		grantButton.Disable()
+		go func() {
+			time.Sleep(time.Until(expires))
+			simulatedGrant.Revoke()
+			fyne.Do(func() {
+				grantStatus.SetText("Testfreigabe abgelaufen – keine Systemberechtigung")
+				grantButton.Enable()
+			})
+		}()
+	}
 	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -346,94 +283,17 @@ func Run() error {
 	// Installationseinrichtung: Die beiden Komponenten laufen unabhängig von diesem Fenster.
 	gnomeInstallStatus := widget.NewLabel(i18n.Translations(lang)["gnomeChecking"])
 	serviceInstallStatus := widget.NewLabel(i18n.Translations(lang)["serviceChecking"])
-	gnomeInstallButton := widget.NewButtonWithIcon("GNOME-Erweiterung installieren", theme.DownloadIcon(), nil)
-	serviceInstallButton := widget.NewButtonWithIcon("Hintergrunddienst installieren", theme.SettingsIcon(), nil)
+	gnomeInstallButton := widget.NewButtonWithIcon("GNOME-Erweiterung (später)", theme.DownloadIcon(), nil)
+	serviceInstallButton := widget.NewButtonWithIcon("Hintergrunddienst (später)", theme.SettingsIcon(), nil)
 	var refreshInstallStatus func()
-	gnomeInstallButton.OnTapped = func() {
-		if _, err := os.Stat("/usr/share/gnome-shell/extensions/proxilens-input@local/metadata.json"); err == nil {
-			gnomeInstallButton.Disable()
-			go func() {
-				cmd := exec.Command("gnome-extensions", "enable", "proxilens-input@local")
-				out, enableErr := cmd.CombinedOutput()
-				fyne.Do(func() {
-					if enableErr != nil {
-						dialog.ShowError(fmt.Errorf("GNOME-Erweiterung konnte nicht aktiviert werden: %v\\n%s", enableErr, strings.TrimSpace(string(out))), w)
-					}
-					refreshInstallStatus()
-				})
-			}()
-			return
-		}
-		runGitHubInstaller(w, "install-gnome-extension.sh", gnomeInstallStatus, gnomeInstallButton, refreshInstallStatus, func() string { return lang })
-	}
-	serviceInstallButton.OnTapped = func() {
-		if _, err := os.Stat("/usr/lib/systemd/user/proxilens-wake-agent.service"); err == nil {
-			serviceInstallButton.Disable()
-			go func() {
-				cmd := exec.Command("systemctl", "--user", "enable", "--now", "proxilens-wake-agent.service")
-				out, startErr := cmd.CombinedOutput()
-				fyne.Do(func() {
-					if startErr != nil {
-						serviceInstallStatus.SetText(i18n.Translations(lang)["serviceInactive"])
-						dialog.ShowError(fmt.Errorf("Wake-Agent konnte nicht aktiviert werden: %v\\n%s", startErr, strings.TrimSpace(string(out))), w)
-					} else {
-						serviceInstallStatus.SetText(i18n.Translations(lang)["serviceActive"])
-					}
-					refreshInstallStatus()
-				})
-			}()
-			return
-		}
-		runGitHubInstaller(w, "install-wake-agent.sh", serviceInstallStatus, serviceInstallButton, refreshInstallStatus, func() string { return lang })
-	}
+	gnomeInstallButton.Disable()
+	serviceInstallButton.Disable()
+	gnomeInstallStatus.SetText("In dieser sicheren Entwicklungsfassung nicht installiert.")
+	serviceInstallStatus.SetText("In dieser sicheren Entwicklungsfassung nicht installiert.")
 	refreshInstallStatus = func() {
-		go func() {
-			const extensionUUID = "proxilens-input@local"
-			extensionDirs := []string{
-				filepath.Join("/usr/share/gnome-shell/extensions", extensionUUID),
-				filepath.Join(os.Getenv("HOME"), ".local", "share", "gnome-shell", "extensions", extensionUUID),
-			}
-			gnomeInstalled := false
-			for _, extensionDir := range extensionDirs {
-				if _, metadataErr := os.Stat(filepath.Join(extensionDir, "metadata.json")); metadataErr == nil {
-					gnomeInstalled = true
-					break
-				}
-			}
-			enabledOutput := commandOutput("gnome-extensions", "list", "--enabled")
-			gnomeEnabled := false
-			for _, id := range strings.Split(enabledOutput, "\n") {
-				if strings.TrimSpace(id) == extensionUUID {
-					gnomeEnabled = true
-					break
-				}
-			}
-			serviceState := commandOutput("systemctl", "--user", "is-active", "proxilens-wake-agent.service")
-			serviceInstalled := strings.TrimSpace(serviceState) == "active"
-			fyne.Do(func() {
-				if gnomeInstalled && gnomeEnabled {
-					gnomeInstallStatus.SetText(i18n.Translations(lang)["gnomeEnabled"])
-					gnomeInstallButton.Disable()
-				} else if gnomeInstalled {
-					gnomeInstallStatus.SetText(i18n.Translations(lang)["gnomeInstalledDisabled"])
-					gnomeInstallButton.SetText(i18n.Translations(lang)["gnomeEnable"])
-					gnomeInstallButton.Enable()
-				} else {
-					gnomeInstallStatus.SetText(i18n.Translations(lang)["notInstalled"])
-					gnomeInstallButton.SetText(i18n.Translations(lang)["gnomeInstall"])
-					gnomeInstallButton.Enable()
-				}
-				if serviceInstalled {
-					serviceInstallStatus.SetText(i18n.Translations(lang)["serviceActive"])
-					serviceInstallButton.Disable()
-				} else {
-					serviceInstallStatus.SetText(i18n.Translations(lang)["serviceInactive"])
-					serviceInstallButton.Enable()
-				}
-			})
-		}()
+		gnomeInstallButton.Disable()
+		serviceInstallButton.Disable()
 	}
-	refreshInstallStatus()
 	setupCard := widget.NewCard("Einrichtung", "Einmalige Installation der GNOME-Erweiterung und des Hintergrunddienstes", container.NewVBox(
 		gnomeInstallButton, gnomeInstallStatus,
 		widget.NewSeparator(), serviceInstallButton, serviceInstallStatus,
@@ -465,11 +325,6 @@ func Run() error {
 		duoValue.SetText(t["duoReady"])
 		statusCard.Title, statusCard.Subtitle = t["statusTitle"], t["statusSubtitle"]
 		settingsCard.Title, settingsCard.Subtitle = t["settingsTitle"], t["settingsSubtitle"]
-		sudoCard.Title, sudoCard.Subtitle = t["sudoTitle"], t["sudoSubtitle"]
-		sudoEnabled.SetText(t["sudoEnable"])
-		sudoApply.SetText(t["sudoApply"])
-		sudoDurationLabel.SetText(t["sudoDuration"])
-		sudoPasswordNote.SetText(t["sudoPasswordNote"])
 		setupCard.Title, setupCard.Subtitle = t["setupTitle"], t["setupSubtitle"]
 		saveButton.SetText(t["save"])
 		checkButton.SetText(t["check"])
@@ -516,16 +371,14 @@ func Run() error {
 		// new language immediately (canvas.Refresh alone is not sufficient).
 		statusCard.Refresh()
 		settingsCard.Refresh()
-		sudoCard.Refresh()
 		setupCard.Refresh()
 		languageSelect.PlaceHolder = t["languageSelectPlaceholder"]
 		languageSelect.Refresh()
 		for _, obj := range []fyne.CanvasObject{
-			statusCard, settingsCard, sudoCard, setupCard, headerRow, footer,
+			statusCard, settingsCard, safetyNotice, setupCard, headerRow, footer,
 			subtitle, languageSelect, topRight, sessionValue, authValue, duoValue,
 			sessionName, authName, duoName,
-			databaseName, saveButton, saveStatus, checkButton, pushTextTitle, pushTextLabel, pushTypeEntry,
-			sudoDurationLabel, sudoPasswordNote, sudoStatus, sudoDuration, sudoEnabled, sudoApply,
+			databaseName, saveButton, saveStatus, checkButton, pushButton, grantButton, grantStatus, pushTextTitle, pushTextLabel, pushTypeEntry,
 			gnomeInstallButton, gnomeInstallStatus, serviceInstallButton, serviceInstallStatus,
 			githubStatus,
 		} {
@@ -538,7 +391,7 @@ func Run() error {
 		headerRow,
 		footer,
 		nil, nil,
-		container.NewVScroll(container.NewVBox(statusCard, setupCard, settingsCard, sudoCard, checkButton)),
+		container.NewVScroll(container.NewVBox(statusCard, setupCard, settingsCard, safetyNotice, checkButton, pushButton, grantStatus, grantButton)),
 	)
 	w.SetContent(container.NewPadded(content))
 
@@ -658,274 +511,4 @@ func commandOutput(name string, args ...string) string {
 		return string(out)
 	}
 	return string(out)
-}
-
-// runGitHubInstaller downloads the repository's current default branch and runs
-// the selected, version-controlled installer script. No local source checkout is
-// required; the running wake-agent remains independent of this UI process.
-func runGitHubInstaller(w fyne.Window, script string, status *widget.Label, button *widget.Button, refresh func(), language func() string) {
-	status.SetText(i18n.Translations(language())["installDownloading"])
-	button.Disable()
-
-	go func() {
-		defer func() {
-			fyne.Do(func() { button.Enable() })
-		}()
-
-		root, cleanup, err := downloadGitHubSource()
-		if err != nil {
-			fyne.Do(func() {
-				status.SetText(i18n.Translations(language())["installDownloadFailed"])
-				dialog.ShowError(err, w)
-			})
-			return
-		}
-		defer cleanup()
-
-		scriptPath, pathErr := findInstallerScript(root, script)
-		if pathErr != nil {
-			fyne.Do(func() {
-				status.SetText(i18n.Translations(language())["installScriptMissing"])
-				dialog.ShowError(pathErr, w)
-			})
-			return
-		}
-
-		fyne.Do(func() { status.SetText(i18n.Translations(language())["installRunning"]) })
-		cmd := exec.Command("bash", scriptPath)
-		cmd.Dir = root
-		out, runErr := cmd.CombinedOutput()
-
-		fyne.Do(func() {
-			if runErr != nil {
-				status.SetText(i18n.Translations(language())["installFailed"])
-				dialog.ShowError(fmt.Errorf("%s\n%s", runErr, strings.TrimSpace(string(out))), w)
-				return
-			}
-			status.SetText(i18n.Translations(language())["installSuccess"])
-			refresh()
-			if strings.TrimSpace(string(out)) != "" {
-				dialog.ShowInformation(i18n.Translations(language())["installDialog"], strings.TrimSpace(string(out)), w)
-			}
-		})
-	}()
-}
-
-// downloadGitHubSource asks GitHub for the repository's default branch, downloads
-// its ZIP archive, and extracts it into a private temporary directory.
-func downloadGitHubSource() (string, func(), error) {
-	const repoAPI = "https://api.github.com/repos/anonymous-writer/ProxiLens"
-
-	tempDir, err := os.MkdirTemp("", "proxilens-github-install-*")
-	if err != nil {
-		return "", func() {}, err
-	}
-	cleanup := func() { _ = os.RemoveAll(tempDir) }
-
-	client := &http.Client{Timeout: 2 * time.Minute}
-	request := func(endpoint string) (*http.Response, error) {
-		req, err := http.NewRequest(http.MethodGet, endpoint, nil)
-		if err != nil {
-			return nil, err
-		}
-		req.Header.Set("Accept", "application/vnd.github+json")
-		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-		req.Header.Set("User-Agent", "ProxiLens-Desktop-Installer")
-		return client.Do(req)
-	}
-
-	metaResp, err := request(repoAPI)
-	if err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("GitHub-Repositoryinformationen konnten nicht geladen werden: %w", err)
-	}
-	defer metaResp.Body.Close()
-	if metaResp.StatusCode != http.StatusOK {
-		cleanup()
-		return "", func() {}, fmt.Errorf("GitHub-Repositoryabfrage fehlgeschlagen: HTTP %s", metaResp.Status)
-	}
-	var metadata struct {
-		DefaultBranch string `json:"default_branch"`
-	}
-	if err := json.NewDecoder(metaResp.Body).Decode(&metadata); err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("GitHub-Antwort konnte nicht gelesen werden: %w", err)
-	}
-	if metadata.DefaultBranch == "" || strings.Contains(metadata.DefaultBranch, "..") {
-		cleanup()
-		return "", func() {}, fmt.Errorf("GitHub hat keinen gültigen Standard-Branch geliefert")
-	}
-
-	archiveURL := repoAPI + "/zipball/" + url.PathEscape(metadata.DefaultBranch)
-	archiveResp, err := request(archiveURL)
-	if err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("ProxiLens-Quellarchiv konnte nicht geladen werden: %w", err)
-	}
-	defer archiveResp.Body.Close()
-	if archiveResp.StatusCode != http.StatusOK {
-		cleanup()
-		return "", func() {}, fmt.Errorf("Download des GitHub-Quellarchivs fehlgeschlagen: HTTP %s", archiveResp.Status)
-	}
-
-	archivePath := filepath.Join(tempDir, "source.zip")
-	archiveFile, err := os.OpenFile(archivePath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-	if err != nil {
-		cleanup()
-		return "", func() {}, err
-	}
-	_, copyErr := io.Copy(archiveFile, io.LimitReader(archiveResp.Body, 100<<20))
-	closeErr := archiveFile.Close()
-	if copyErr != nil || closeErr != nil {
-		cleanup()
-		if copyErr != nil {
-			return "", func() {}, fmt.Errorf("GitHub-Archiv konnte nicht gespeichert werden: %w", copyErr)
-		}
-		return "", func() {}, closeErr
-	}
-
-	zr, err := zip.OpenReader(archivePath)
-	if err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("GitHub-Archiv ist ungültig: %w", err)
-	}
-	defer zr.Close()
-
-	extractRoot := filepath.Join(tempDir, "repo")
-	if err := os.MkdirAll(extractRoot, 0700); err != nil {
-		cleanup()
-		return "", func() {}, err
-	}
-
-	var total int64
-	for _, file := range zr.File {
-		cleanName := filepath.Clean(filepath.FromSlash(file.Name))
-		parts := strings.Split(cleanName, string(os.PathSeparator))
-		if filepath.IsAbs(cleanName) || cleanName == "." || cleanName == ".." ||
-			(len(parts) > 0 && parts[0] == "..") {
-			cleanup()
-			return "", func() {}, fmt.Errorf("Unsicherer Pfad im GitHub-Archiv: %s", file.Name)
-		}
-		// GitHub ZIP archives contain one top-level directory.
-		if len(parts) < 2 {
-			continue
-		}
-		relative := filepath.Join(parts[1:]...)
-		if relative == "." || relative == "" {
-			continue
-		}
-		target := filepath.Join(extractRoot, relative)
-		if !strings.HasPrefix(target, extractRoot+string(os.PathSeparator)) {
-			cleanup()
-			return "", func() {}, fmt.Errorf("Ungültiger Archivpfad: %s", file.Name)
-		}
-		if file.FileInfo().IsDir() {
-			if err := os.MkdirAll(target, 0700); err != nil {
-				cleanup()
-				return "", func() {}, err
-			}
-			continue
-		}
-		total += int64(file.UncompressedSize64)
-		if total > 200<<20 {
-			cleanup()
-			return "", func() {}, fmt.Errorf("GitHub-Quellarchiv überschreitet die erlaubte Entpackgröße")
-		}
-		if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
-			cleanup()
-			return "", func() {}, err
-		}
-		in, err := file.Open()
-		if err != nil {
-			cleanup()
-			return "", func() {}, err
-		}
-		out, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
-		if err != nil {
-			in.Close()
-			cleanup()
-			return "", func() {}, err
-		}
-		_, copyErr := io.Copy(out, io.LimitReader(in, int64(file.UncompressedSize64)+1))
-		in.Close()
-		closeErr := out.Close()
-		if copyErr != nil || closeErr != nil {
-			cleanup()
-			if copyErr != nil {
-				return "", func() {}, copyErr
-			}
-			return "", func() {}, closeErr
-		}
-		if file.Mode()&0111 != 0 {
-			_ = os.Chmod(target, 0700)
-		}
-	}
-
-	projectRoot, err := findInstallerProjectRoot(extractRoot)
-	if err != nil {
-		cleanup()
-		return "", func() {}, err
-	}
-	return projectRoot, cleanup, nil
-}
-
-// findInstallerProjectRoot locates the project regardless of whether GitHub's
-// archive has one wrapper directory, an additional nested project directory,
-// or the older deploy/ layout.
-func findInstallerProjectRoot(extractRoot string) (string, error) {
-	var candidates []string
-	err := filepath.WalkDir(extractRoot, func(path string, entry os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if !entry.IsDir() {
-			return nil
-		}
-		rel, err := filepath.Rel(extractRoot, path)
-		if err != nil {
-			return err
-		}
-		if strings.Count(rel, string(os.PathSeparator)) > 5 {
-			return filepath.SkipDir
-		}
-		scriptsDir := filepath.Join(path, "scripts")
-		deployDir := filepath.Join(path, "deploy")
-		hasScripts := fileExists(filepath.Join(scriptsDir, "install-gnome-extension.sh")) &&
-			fileExists(filepath.Join(scriptsDir, "install-wake-agent.sh"))
-		hasDeploy := fileExists(filepath.Join(deployDir, "install-gnome-extension.sh")) &&
-			fileExists(filepath.Join(deployDir, "install-wake-agent.sh"))
-		if hasScripts || hasDeploy {
-			candidates = append(candidates, path)
-			return filepath.SkipDir
-		}
-		return nil
-	})
-	if err != nil {
-		return "", fmt.Errorf("GitHub-Archiv konnte nicht nach Installationsskripten durchsucht werden: %w", err)
-	}
-	if len(candidates) == 0 {
-		return "", fmt.Errorf("Im GitHub-Quellarchiv wurden die beiden Installationsskripte nicht gefunden. Erwartet werden scripts/install-gnome-extension.sh und scripts/install-wake-agent.sh (alternativ deploy/...). Bitte prüfe, ob die aktuelle Dateistruktur bereits in den GitHub-Standard-Branch hochgeladen wurde.")
-	}
-	if len(candidates) > 1 {
-		return "", fmt.Errorf("Im GitHub-Quellarchiv wurden mehrere mögliche ProxiLens-Projektverzeichnisse gefunden; die Installation wurde aus Sicherheitsgründen abgebrochen.")
-	}
-	return candidates[0], nil
-}
-
-func findInstallerScript(projectRoot, script string) (string, error) {
-	if filepath.Base(script) != script || (script != "install-gnome-extension.sh" && script != "install-wake-agent.sh") {
-		return "", fmt.Errorf("Unzulässiger Name des Installationsskripts: %s", script)
-	}
-	for _, dir := range []string{"scripts", "deploy"} {
-		candidate := filepath.Join(projectRoot, dir, script)
-		if fileExists(candidate) {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("Installationsskript %s wurde weder unter scripts/ noch unter deploy/ gefunden.", script)
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	return err == nil && !info.IsDir()
 }

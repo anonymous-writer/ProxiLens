@@ -9,21 +9,12 @@ export CGO_ENABLED = 1
 override_dh_auto_build:
 	mkdir -p build
 	go build -trimpath -ldflags="-s -w $(PROXILENS_LDFLAGS)" -o build/proxilens-ui .
-	go build -trimpath -ldflags="-s -w" -o build/proxilens-wake-agent ./cmd/proxilens-wake-agent
-	go build -trimpath -ldflags="-s -w" -o build/proxilens-sudo-helper ./cmd/proxilens-sudo-helper
-	$(CC) $(CPPFLAGS) $(CFLAGS) -fPIC -shared -Wl,-z,relro,-z,now -o build/pam_proxilens.so pam/pam_proxilens.c
 
 override_dh_auto_test:
 	go test ./...
 
 override_dh_auto_install:
 	install -D -m 0755 build/proxilens-ui debian/tmp/usr/bin/proxilens-ui
-	install -D -m 0755 build/proxilens-wake-agent debian/tmp/usr/bin/proxilens-wake-agent
-	install -D -m 0755 build/proxilens-sudo-helper debian/tmp/usr/lib/proxilens/proxilens-sudo-helper
-	install -D -m 0644 build/pam_proxilens.so debian/tmp/usr/lib/$(DEB_HOST_MULTIARCH)/security/pam_proxilens.so
 	install -D -m 0644 static/icons/proxilens-512px.png debian/tmp/usr/share/icons/hicolor/512x512/apps/proxilens.png
 	install -D -m 0644 packaging/debian/proxilens.desktop debian/tmp/usr/share/applications/proxilens.desktop
-	install -D -m 0644 packaging/debian/proxilens-wake-agent.service debian/tmp/usr/lib/systemd/user/proxilens-wake-agent.service
-	install -d -m 0755 debian/tmp/usr/share/gnome-shell/extensions/proxilens-input@local
 	install -D -m 0644 packaging/debian/proxilens.metainfo.xml debian/tmp/usr/share/metainfo/proxilens.metainfo.xml
-	cp -a gnome-extension/proxilens-input@local/. debian/tmp/usr/share/gnome-shell/extensions/proxilens-input@local/

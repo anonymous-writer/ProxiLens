@@ -1,3 +1,12 @@
+proxilens (2.1.0~beta4) unstable; urgency=medium
+
+  * Create a safe development package containing only the desktop UI.
+  * Exclude legacy PAM module, privileged helper, wake agent and GNOME extension.
+  * Add direct Duo Push diagnostics and an in-memory-only 15-minute grant simulation.
+  * Explicitly keep sudo, PAM and Polkit integration disabled.
+
+ -- ProxiLens Maintainers <maintainers@example.invalid>  Wed, 25 Nov 2026 21:40:00 +0100
+
 proxilens (2.1.0~beta2) unstable; urgency=medium
 
   * Add interactive PAM Duo-first authentication with explicit Ubuntu-password

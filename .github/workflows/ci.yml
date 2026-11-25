@@ -67,11 +67,9 @@ jobs:
       - name: Run go vet
         run: go vet ./...
 
-      - name: Build Wake Agent
+      - name: Build safe desktop UI
         run: |
           mkdir -p dist
-          go build -trimpath -o dist/proxilens-wake-agent ./cmd/proxilens-wake-agent
-          go build -trimpath -o dist/proxilens-sudo-helper ./cmd/proxilens-sudo-helper
           go build -trimpath -o dist/proxilens-ui .
 
       - name: Upload build artifact

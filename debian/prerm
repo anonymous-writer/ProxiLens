@@ -1,15 +1,6 @@
 #!/bin/sh
 set -e
-case "$1" in
-  remove|deconfigure)
-    # Remove our PAM hook before the helper binary is removed. Refuse package
-    # removal if cleanup fails, so sudo is never left pointing at a missing helper.
-    if [ -x /usr/lib/proxilens/proxilens-sudo-helper ]; then
-      /usr/lib/proxilens/proxilens-sudo-helper disable
-    fi
-    # Do not attempt to control every user's systemd --user manager here.
-    # The package owns only the unit file; user data is never removed.
-    ;;
-esac
+# Safe development package: no PAM, Polkit or sudoers hooks are installed.
+# Do not perform privileged authentication cleanup here.
 #DEBHELPER#
 exit 0

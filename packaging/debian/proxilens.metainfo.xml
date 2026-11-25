@@ -10,8 +10,9 @@
 
   <description>
     <p>
-      ProxiLens provides a desktop settings application, a GNOME Shell
-      extension and a user-session wake agent for direct Duo integration.
+      ProxiLens provides a non-privileged desktop application for direct Duo
+      API diagnostics and an in-memory grant-state simulation. It does not
+      integrate with PAM, Polkit, sudo or system authentication.
     </p>
   </description>
 
