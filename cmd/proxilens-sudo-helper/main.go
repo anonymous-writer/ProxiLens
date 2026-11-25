@@ -32,12 +32,17 @@ const (
 	pamBackupPath           = "/etc/proxilens/sudo-pam.original"
 	polkitPAMBackupPath     = "/etc/proxilens/polkit-1-pam.original"
 	polkitPAMWasAbsentPath  = "/etc/proxilens/polkit-1-pam.was-absent"
+	polkitUnitDropInDir     = "/etc/systemd/system/polkit-agent-helper@.service.d"
+	polkitUnitDropInPath    = "/etc/systemd/system/polkit-agent-helper@.service.d/50-proxilens-network.conf"
+	polkitUnitBackupPath    = "/etc/proxilens/polkit-agent-helper-unit.original"
+	polkitUnitWasAbsentPath = "/etc/proxilens/polkit-agent-helper-unit.was-absent"
 	pamPath                 = "/etc/pam.d/sudo"
 	polkitPAMPath           = "/etc/pam.d/polkit-1"
 	polkitPAMTemplatePath   = "/usr/lib/pam.d/polkit-1"
 	pamMarker               = "# ProxiLens sudo Duo authentication"
 	pamPasswordBypassMarker = "# ProxiLens Duo-only: skip Ubuntu password only for the configured user."
 	pamLine                 = pamMarker + "\nauth required pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth"
+	polkitNetworkDropIn     = "[Service]\nPrivateNetwork=no\nRestrictAddressFamilies=\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\n"
 	sudoersPath             = "/etc/sudoers.d/proxilens"
 	helperDir               = "/run/proxilens/sudo-grants"
 )
@@ -209,6 +214,36 @@ func configure() error {
 		return err
 	}
 
+	// Polkit's vendor helper is intentionally sandboxed. Duo's HTTPS API needs
+	// host networking and AF_INET/AF_INET6; override only those two sandbox
+	// settings while preserving every other vendor hardening directive.
+	if err := ensureProtectedDir(polkitUnitDropInDir, 0755); err != nil {
+		return fmt.Errorf("Polkit-Systemd-Drop-in-Verzeichnis: %w", err)
+	}
+	polkitUnitCurrent, polkitUnitReadErr := os.ReadFile(polkitUnitDropInPath)
+	polkitUnitExisted := polkitUnitReadErr == nil
+	if polkitUnitReadErr != nil && !errors.Is(polkitUnitReadErr, os.ErrNotExist) {
+		return fmt.Errorf("bestehendes Polkit-Systemd-Drop-in lesen: %w", polkitUnitReadErr)
+	}
+	if polkitUnitExisted {
+		info, statErr := os.Lstat(polkitUnitDropInPath)
+		if statErr != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			return errors.New("bestehendes Polkit-Systemd-Drop-in ist keine reguläre Datei; keine automatische Änderung")
+		}
+		if st, ok := info.Sys().(*syscall.Stat_t); !ok || st.Uid != 0 || info.Mode().Perm()&0022 != 0 {
+			return errors.New("bestehendes Polkit-Systemd-Drop-in ist nicht root-geschützt")
+		}
+	}
+	oldPolkitUnitBackup, polkitUnitBackupErr := os.ReadFile(polkitUnitBackupPath)
+	polkitUnitBackupExisted := polkitUnitBackupErr == nil
+	if polkitUnitBackupErr != nil && !errors.Is(polkitUnitBackupErr, os.ErrNotExist) {
+		return polkitUnitBackupErr
+	}
+	oldPolkitUnitAbsent, polkitUnitAbsentErr := os.ReadFile(polkitUnitWasAbsentPath)
+	polkitUnitAbsentExisted := polkitUnitAbsentErr == nil
+	if polkitUnitAbsentErr != nil && !errors.Is(polkitUnitAbsentErr, os.ErrNotExist) {
+		return polkitUnitAbsentErr
+	}
 	oldConfig, configErr := os.ReadFile(configPath)
 	configExisted := configErr == nil
 	if configErr != nil && !errors.Is(configErr, os.ErrNotExist) {
@@ -254,6 +289,10 @@ func configure() error {
 		restoreFile(polkitPAMPath, oldPolkitPAM, polkitPAMExisted, 0644)
 		restoreFile(polkitPAMBackupPath, oldPolkitBackup, polkitBackupExisted, 0600)
 		restoreFile(polkitPAMWasAbsentPath, oldPolkitAbsent, polkitAbsentExisted, 0600)
+		restoreFile(polkitUnitDropInPath, polkitUnitCurrent, polkitUnitExisted, 0644)
+		restoreFile(polkitUnitBackupPath, oldPolkitUnitBackup, polkitUnitBackupExisted, 0600)
+		restoreFile(polkitUnitWasAbsentPath, oldPolkitUnitAbsent, polkitUnitAbsentExisted, 0600)
+		_ = systemdDaemonReload()
 	}
 	cfg.Enabled = true
 	if err := ensureProtectedDir(filepath.Dir(configPath), 0755); err != nil {
@@ -262,7 +301,29 @@ func configure() error {
 	if err := ensureProtectedDir(helperDir, 0700); err != nil {
 		return fmt.Errorf("Duo-Freigabespeicher: %w", err)
 	}
+	if !polkitUnitBackupExisted {
+		if polkitUnitExisted {
+			if err := atomicWrite(polkitUnitBackupPath, polkitUnitCurrent, 0600); err != nil {
+				rollback()
+				return fmt.Errorf("bestehendes Polkit-Systemd-Drop-in sichern: %w", err)
+			}
+		} else {
+			if err := atomicWrite(polkitUnitWasAbsentPath, []byte("yes\n"), 0600); err != nil {
+				rollback()
+				return fmt.Errorf("Polkit-Systemd-Ausgangszustand sichern: %w", err)
+			}
+		}
+	}
+	if err := atomicWrite(polkitUnitDropInPath, []byte(polkitNetworkDropIn), 0644); err != nil {
+		rollback()
+		return fmt.Errorf("Polkit-Netzwerkfreigabe schreiben: %w", err)
+	}
+	if err := systemdDaemonReload(); err != nil {
+		rollback()
+		return fmt.Errorf("systemd-Konfiguration neu laden: %w", err)
+	}
 	if err := writeJSON(configPath, cfg, 0600); err != nil {
+		rollback()
 		return fmt.Errorf("Root-Konfiguration schreiben: %w", err)
 	}
 	// Publish the non-secret status and sudoers policy before adding the PAM
@@ -346,6 +407,31 @@ func disable() error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	// Restore the exact prior Polkit helper sandbox override, or remove our
+	// drop-in if none existed before ProxiLens. Never edit the vendor unit.
+	if backup, err := os.ReadFile(polkitUnitBackupPath); err == nil {
+		if !safeRootFile(polkitUnitBackupPath, 0600) {
+			return errors.New("Polkit-Systemd-Sicherung ist nicht root-geschützt; Deaktivierung abgebrochen")
+		}
+		if err := atomicWrite(polkitUnitDropInPath, backup, 0644); err != nil {
+			return fmt.Errorf("Polkit-Systemd-Drop-in wiederherstellen: %w", err)
+		}
+	} else if errors.Is(err, os.ErrNotExist) {
+		if _, absentErr := os.Stat(polkitUnitWasAbsentPath); absentErr == nil {
+			if err := os.Remove(polkitUnitDropInPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("Polkit-Systemd-Drop-in entfernen: %w", err)
+			}
+		} else if _, statErr := os.Lstat(polkitUnitDropInPath); statErr == nil {
+			return errors.New("Polkit-Systemd-Sicherung fehlt; vorhandenes Drop-in wird aus Sicherheitsgründen nicht entfernt")
+		}
+	} else {
+		return err
+	}
+	if err := systemdDaemonReload(); err != nil {
+		return fmt.Errorf("systemd-Konfiguration nach Deaktivierung neu laden: %w", err)
+	}
+	_ = os.Remove(polkitUnitBackupPath)
+	_ = os.Remove(polkitUnitWasAbsentPath)
 	if err := os.Remove(sudoersPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("sudoers-Regel entfernen: %w", err)
 	}
@@ -477,6 +563,14 @@ func pamAuth() error {
 	g := grant{UID: uid, Scope: scope, GrantedAt: now, ExpiresAt: now.Add(time.Duration(cfg.DurationMin) * time.Minute)}
 	if err := writeJSON(grantPath, g, 0600); err != nil {
 		return errors.New("Duo erfolgreich, aber Freigabe konnte nicht sicher gespeichert werden")
+	}
+	return nil
+}
+
+func systemdDaemonReload() error {
+	cmd := exec.Command("/usr/bin/systemctl", "daemon-reload")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("systemctl daemon-reload: %w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }

@@ -101,3 +101,21 @@ func TestDuoOnlyPAMCanBeAppliedToPolkitTemplate(t *testing.T) {
 		t.Fatalf("Polkit auth hook or non-auth stack missing:\n%s", got)
 	}
 }
+
+func TestPolkitNetworkDropInOnlyRelaxesRequiredNetworkSandbox(t *testing.T) {
+	for _, want := range []string{
+		"[Service]",
+		"PrivateNetwork=no",
+		"RestrictAddressFamilies=\n",
+		"RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
+	} {
+		if !strings.Contains(polkitNetworkDropIn, want) {
+			t.Errorf("Polkit network drop-in missing %q:\n%s", want, polkitNetworkDropIn)
+		}
+	}
+	for _, forbidden := range []string{"NoNewPrivileges=no", "ProtectSystem=", "PrivateTmp=no", "DevicePolicy=auto"} {
+		if strings.Contains(polkitNetworkDropIn, forbidden) {
+			t.Errorf("Polkit network drop-in unexpectedly weakens unrelated hardening with %q", forbidden)
+		}
+	}
+}
