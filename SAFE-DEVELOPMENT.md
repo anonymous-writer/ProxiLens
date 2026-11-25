@@ -14,7 +14,7 @@ This branch does **not** integrate with or modify:
 - system-wide or user systemd services
 - GNOME lock-screen authentication or session unlocking
 
-The simulated grant exists only in process memory. It is not persisted, exported, or consumed by any operating-system authorization component. It grants no OS permissions and is not an authentication control.
+The development grant is held in memory by a per-user broker and exposed through a private Unix-domain socket (directory mode 0700, socket mode 0600). The IPC endpoint is read-only (`status`). It is not persisted or consumed by any operating-system authorization component. It grants no OS permissions and is not an authentication control. The broker runs inside the desktop application process and exits with it.
 
 ## Build
 
@@ -35,6 +35,10 @@ The Debian packaging rules build and install only `proxilens-ui`, its desktop la
 4. After a successful push, use **15-Minuten-Freigabe simulieren** to test the local in-memory expiry state.
 
 Do not treat the simulation as a real sudo or Polkit authorization. The Duo Secret Key is stored using the existing credential-store mechanism; never include it in logs, screenshots, support bundles, or chat messages.
+
+## Grant broker boundary
+
+The broker is deliberately user-scoped and non-privileged. Its socket is not an authorization API: it only reports whether the local test timer is active. A future privileged service must use a separately designed authenticated protocol and must independently verify the Duo result; it must not trust this user-owned socket or accept a user-controlled “grant active” flag.
 
 ## Deferred work
 

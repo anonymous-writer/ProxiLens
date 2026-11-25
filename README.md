@@ -51,3 +51,43 @@ The Debian packaging rules build and install only the desktop UI, launcher, icon
 The UI and Duo API client run as the logged-in user. The application has no mechanism in this branch to authorize `sudo` or Polkit actions. A future system-authentication integration requires a separate threat model, protocol and authorization design, recovery-tested rollback, and automated testing on disposable virtual machines. It must not be added by reintroducing PAM or Polkit edits opportunistically.
 
 See [SAFE-DEVELOPMENT.md](SAFE-DEVELOPMENT.md) for the branch scope and test details.
+
+## Safe development grant broker (Beta 6)
+
+The development grant broker is a separate, unprivileged per-user process. It
+only stores a local test state and **must never be used to authorize sudo, PAM,
+Polkit, or any privileged operation**.
+
+For a source-tree test, start it in one terminal:
+
+```sh
+./proxilens-ui --grant-broker
+```
+
+Then start the desktop application in a second terminal:
+
+```sh
+./proxilens-ui
+```
+
+The GUI reads and updates the test state over a per-user Unix socket below
+`$XDG_RUNTIME_DIR/proxilens/`. Stop the broker with Ctrl+C. If the broker is
+not running, the GUI reports that it cannot connect; it does not start an
+in-process fallback.
+
+For a packaged installation, the optional systemd *user* unit is installed
+under `/usr/lib/systemd/user/`. Enable it for the current user with:
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now proxilens-grant-broker.service
+```
+
+Disable it with:
+
+```sh
+systemctl --user disable --now proxilens-grant-broker.service
+```
+
+This unit is a user service, not a system service. Beta 6 still makes no PAM,
+Polkit, sudoers, or system-authentication changes.

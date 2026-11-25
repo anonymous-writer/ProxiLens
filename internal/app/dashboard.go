@@ -10,7 +10,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -28,7 +27,7 @@ import (
 	"github.com/local/proxilens/internal/buildinfo"
 	"github.com/local/proxilens/internal/configstore"
 	"github.com/local/proxilens/internal/duo"
-	"github.com/local/proxilens/internal/grantsim"
+	"github.com/local/proxilens/internal/grantbroker"
 	"github.com/local/proxilens/internal/i18n"
 	"github.com/local/proxilens/internal/session"
 	staticassets "github.com/local/proxilens/static"
@@ -218,7 +217,6 @@ func Run() error {
 	// system services while Duo and local grant behavior are being validated.
 	safetyNotice := widget.NewCard("Systemauthentifizierung deaktiviert", "Diese Entwicklungsfassung testet Duo unabhängig. sudo, PAM und Polkit werden nicht verändert.", widget.NewLabel("Es wird keine privilegierte Freigabe erteilt. Die lokale Freigabe ist zunächst nur ein Testzustand und ersetzt keine Ubuntu-Authentifizierung."))
 
-	var simulatedGrant grantsim.Grant
 	grantStatus := widget.NewLabel("Testfreigabe: inaktiv")
 	pushButton := widget.NewButtonWithIcon("Duo Push testen", theme.ConfirmIcon(), nil)
 	grantButton := widget.NewButtonWithIcon("15-Minuten-Freigabe simulieren", theme.InfoIcon(), nil)
@@ -251,18 +249,40 @@ func Run() error {
 		}()
 	}
 	grantButton.OnTapped = func() {
-		expires := simulatedGrant.Start(15 * time.Minute)
-		grantStatus.SetText("SIMULATION aktiv bis " + expires.Format("15:04:05") + " – keine Systemberechtigung")
 		grantButton.Disable()
 		go func() {
-			time.Sleep(time.Until(expires))
-			simulatedGrant.Revoke()
+			status, err := grantbroker.StartTestGrant(15 * time.Minute)
 			fyne.Do(func() {
-				grantStatus.SetText("Testfreigabe abgelaufen – keine Systemberechtigung")
-				grantButton.Enable()
+				if err != nil {
+					grantStatus.SetText("Grant Broker nicht erreichbar: " + err.Error())
+					grantButton.Enable()
+					return
+				}
+				grantStatus.SetText("SIMULATION aktiv bis " + status.ExpiresAt.Format("15:04:05") + " – keine Systemberechtigung")
 			})
 		}()
 	}
+	// The GUI reads status from the independently running user broker.
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for range ticker.C {
+			status, err := grantbroker.QueryStatus()
+			fyne.Do(func() {
+				if err != nil {
+					grantStatus.SetText("Grant Broker nicht erreichbar – Testdienst starten")
+					return
+				}
+				if status.Active {
+					grantStatus.SetText("SIMULATION aktiv bis " + status.ExpiresAt.Format("15:04:05") + " – keine Systemberechtigung")
+				} else if strings.Contains(grantStatus.Text, "SIMULATION aktiv") {
+					grantStatus.SetText("Testfreigabe abgelaufen – keine Systemberechtigung")
+					grantButton.Enable()
+				}
+			})
+		}
+	}()
+
 	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

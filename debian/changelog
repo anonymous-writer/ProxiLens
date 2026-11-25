@@ -1,3 +1,11 @@
+proxilens (2.1.0~beta6) unstable; urgency=medium
+
+  * Run the development grant broker as an independent per-user process.
+  * Route test grant start, status, and revoke through private Unix-socket IPC.
+  * Add an optional systemd user unit; keep all system authentication untouched.
+
+ -- ProxiLens Maintainers <maintainers@example.invalid>  Wed, 25 Nov 2026 22:30:00 +0100
+
 proxilens (2.1.0~beta4) unstable; urgency=medium
 
   * Create a safe development package containing only the desktop UI.

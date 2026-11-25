@@ -2,3 +2,4 @@ usr/bin/proxilens-ui
 usr/share/applications/proxilens.desktop
 usr/share/icons/hicolor/512x512/apps/proxilens.png
 usr/share/metainfo/proxilens.metainfo.xml
+packaging/systemd/user/proxilens-grant-broker.service usr/lib/systemd/user
