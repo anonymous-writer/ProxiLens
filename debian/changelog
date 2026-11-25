@@ -1,3 +1,12 @@
+proxilens (2.1.0~beta2) unstable; urgency=medium
+
+  * Add interactive PAM Duo-first authentication with explicit Ubuntu-password
+    fallback and abort choice for sudo and Polkit.
+  * Preserve the shared session-scoped Duo grant and existing Polkit network
+    sandbox drop-in.
+
+ -- ProxiLens Maintainers <maintainers@example.invalid>  Tue, 25 Nov 2026 06:45:00 +0100
+
 proxilens (2.1.0-2) unstable; urgency=medium
 
   * Add passwordless Duo-only sudo authentication with a session-scoped grant.

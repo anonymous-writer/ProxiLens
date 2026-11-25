@@ -23,3 +23,10 @@ If sudo authentication behaves unexpectedly, use an already-open root-capable se
 ```
 
 Do not manually edit `/etc/pam.d/sudo` or `/etc/pam.d/polkit-1` while activation or deactivation is running.
+
+
+## Interaktiver Duo-Backup-Pfad (ProxiLens 2.1.0 Beta)
+
+Die sudo- und Polkit-PAM-Stacks verwenden `pam_proxilens.so`. Das Modul startet zuerst den root-geschützten ProxiLens-Duo-Helfer. Der PAM-Konversationskanal erhält eine Statusmeldung. Wenn Duo fehlschlägt oder nach dem Push-Zeitlimit nicht antwortet, fragt PAM ausdrücklich nach einer Auswahl: `P` setzt mit Ubuntus regulärem `common-auth`-Stack fort; jede andere Eingabe bricht die Authentifizierung ab. Ein erfolgreicher Duo-Push überspringt `common-auth`. Für andere lokale Benutzer wird das Modul übersprungen und der Ubuntu-Standardstack bleibt aktiv.
+
+Die Passwortauswahl ist bewusst eine textbasierte PAM-Konversationsabfrage (keine separate GNOME-Schaltfläche). Ob der installierte Polkit-Agent diese Abfrage gut lesbar darstellt, muss auf dem Zielsystem getestet werden. Der PAM-Baustein wird gegen `libpam0g-dev` gebaut und unter dem Multiarch-Security-Verzeichnis installiert.

@@ -40,8 +40,8 @@ const (
 	polkitPAMPath           = "/etc/pam.d/polkit-1"
 	polkitPAMTemplatePath   = "/usr/lib/pam.d/polkit-1"
 	pamMarker               = "# ProxiLens sudo Duo authentication"
-	pamPasswordBypassMarker = "# ProxiLens Duo-only: skip Ubuntu password only for the configured user."
-	pamLine                 = pamMarker + "\nauth required pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth"
+	pamPasswordBypassMarker = "# ProxiLens: Duo-first authentication for the configured user; other users retain common-auth."
+	pamLine                 = pamMarker + "\nauth [success=1 ignore=ignore default=die] pam_proxilens.so"
 	polkitNetworkDropIn     = "[Service]\nPrivateNetwork=no\nRestrictAddressFamilies=\nRestrictAddressFamilies=AF_UNIX AF_INET AF_INET6\n"
 	sudoersPath             = "/etc/sudoers.d/proxilens"
 	helperDir               = "/run/proxilens/sudo-grants"
@@ -680,7 +680,7 @@ func duoOnlyPAM(contents, localUser string) string {
 		return contents
 	}
 	// Remove previous ProxiLens lines and replace Ubuntu's password stack
-	// with the Duo-only gate. Account and session policy remain untouched.
+	// with a Duo-first gate and explicit password fallback. Account/session policy remains untouched.
 	contents = removePAMLine(contents)
 	lines := strings.Split(contents, "\n")
 	out := make([]string, 0, len(lines)+2)
@@ -692,9 +692,9 @@ func duoOnlyPAM(contents, localUser string) string {
 			}
 			found = true
 			out = append(out, pamPasswordBypassMarker)
-			out = append(out, "auth [success=1 default=ignore] pam_succeed_if.so user = "+localUser)
-			out = append(out, "auth substack common-auth")
+			out = append(out, "auth [success=1 default=ignore] pam_succeed_if.so user != "+localUser)
 			out = append(out, pamMarker, strings.TrimPrefix(pamLine, pamMarker+"\n"))
+			out = append(out, "auth substack common-auth")
 			continue
 		}
 		out = append(out, line)
@@ -725,7 +725,7 @@ func restoreCommonAuth(contents string) string {
 		if trimmed == pamPasswordBypassMarker {
 			continue
 		}
-		if strings.HasPrefix(trimmed, "auth [success=1 default=ignore] pam_succeed_if.so user = ") {
+		if strings.HasPrefix(trimmed, "auth [success=1 default=ignore] pam_succeed_if.so user != ") {
 			continue
 		}
 		if trimmed == "auth substack common-auth" {
@@ -742,7 +742,7 @@ func removePAMLine(contents string) string {
 	out := make([]string, 0, len(lines))
 	for i := 0; i < len(lines); i++ {
 		if strings.TrimSpace(lines[i]) == pamMarker {
-			if i+1 < len(lines) && strings.Contains(lines[i+1], "proxilens-sudo-helper pam-auth") {
+			if i+1 < len(lines) && (strings.Contains(lines[i+1], "proxilens-sudo-helper pam-auth") || strings.Contains(lines[i+1], "pam_proxilens.so")) {
 				i++
 			}
 			continue

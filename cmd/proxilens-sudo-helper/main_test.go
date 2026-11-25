@@ -13,8 +13,8 @@ func TestDuoOnlyPAMReplacesPasswordAuthentication(t *testing.T) {
 	if strings.Contains(got, "@include common-auth") || !strings.Contains(got, "auth substack common-auth") {
 		t.Fatalf("conditional Ubuntu password substack missing:\n%s", got)
 	}
-	if !strings.Contains(got, "auth [success=1 default=ignore] pam_succeed_if.so user = michael") {
-		t.Fatalf("configured-user password bypass missing:\n%s", got)
+	if !strings.Contains(got, "auth [success=1 default=ignore] pam_succeed_if.so user != michael") {
+		t.Fatalf("non-target-user bypass missing:\n%s", got)
 	}
 	if !strings.Contains(got, pamLine) || !strings.Contains(got, "@include common-account") {
 		t.Fatalf("Duo rule or account stack missing:\n%s", got)
@@ -30,7 +30,7 @@ func TestPAMRuleUpgradeReplacesLegacySeteuidRule(t *testing.T) {
 	if strings.Contains(got, "seteuid") || strings.Contains(got, "@include common-auth") || !strings.Contains(got, "auth substack common-auth") {
 		t.Fatalf("legacy password/PAM rule remains:\n%s", got)
 	}
-	if strings.Count(got, pamMarker) != 1 || !strings.Contains(got, "pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth") {
+	if strings.Count(got, pamMarker) != 1 || !strings.Contains(got, "pam_proxilens.so") {
 		t.Fatalf("correct Duo-only PAM helper rule missing:\n%s", got)
 	}
 }
@@ -65,7 +65,7 @@ func TestAuthenticationSessionScopeRejectsInvalidLogindID(t *testing.T) {
 }
 
 func TestRestoreCommonAuthReversesDuoOnlyPAM(t *testing.T) {
-	input := "auth sufficient pam_rootok.so\n" + pamPasswordBypassMarker + "\nauth [success=1 default=ignore] pam_succeed_if.so user = michael\nauth substack common-auth\n" + pamMarker + "\nauth required pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth\n@include common-account\n"
+	input := "auth sufficient pam_rootok.so\n" + pamPasswordBypassMarker + "\nauth [success=1 default=ignore] pam_succeed_if.so user != michael\n" + pamMarker + "\nauth [success=1 ignore=ignore default=die] pam_proxilens.so\nauth substack common-auth\n@include common-account\n"
 	got := restoreCommonAuth(removePAMLine(input))
 	if !strings.Contains(got, "@include common-auth") {
 		t.Fatalf("common-auth include was not restored:\\n%s", got)
@@ -97,7 +97,7 @@ func TestPAMAuthServicesShareTheSameGrantPath(t *testing.T) {
 func TestDuoOnlyPAMCanBeAppliedToPolkitTemplate(t *testing.T) {
 	template := "#%PAM-1.0\n@include common-auth\n@include common-account\n@include common-password\nsession required pam_env.so\n@include common-session-noninteractive\n"
 	got := duoOnlyPAM(template, "michael")
-	if !strings.Contains(got, "pam_exec.so quiet /usr/lib/proxilens/proxilens-sudo-helper pam-auth") || !strings.Contains(got, "@include common-account") || !strings.Contains(got, "@include common-session-noninteractive") {
+	if !strings.Contains(got, "pam_proxilens.so") || !strings.Contains(got, "@include common-account") || !strings.Contains(got, "@include common-session-noninteractive") {
 		t.Fatalf("Polkit auth hook or non-auth stack missing:\n%s", got)
 	}
 }
