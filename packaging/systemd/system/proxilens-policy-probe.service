@@ -1,0 +1,30 @@
+[Unit]
+Description=ProxiLens Root Policy Probe (observation only)
+Documentation=man:loginctl(1)
+After=systemd-logind.service
+Requires=systemd-logind.service
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/proxilens-ui --policy-probe-service
+Restart=on-failure
+RestartSec=2
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=read-only
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=/run/proxilens-policy
+RuntimeDirectory=proxilens-policy
+RuntimeDirectoryMode=0750
+
+[Install]
+WantedBy=multi-user.target

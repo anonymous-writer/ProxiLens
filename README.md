@@ -91,3 +91,8 @@ systemctl --user disable --now proxilens-grant-broker.service
 
 This unit is a user service, not a system service. Beta 6 still makes no PAM,
 Polkit, sudoers, or system-authentication changes.
+
+
+## Beta 9.2 note
+
+See `BETA9.2-README.md` and `POLICY-SERVICE-BETA9-2.md`. The PAM material under `pam/dev/` is design-only; no PAM module is built or installed. The policy probe always reports `authorized: false`.

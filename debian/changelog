@@ -1,3 +1,35 @@
+proxilens (2.1.0~beta9.2) unstable; urgency=medium
+
+  * Harden observation-only policy probe framing and process identity checks.
+  * Add documentation-only PAM integration scaffold; no PAM module or activation.
+
+ -- ProxiLens Development <dev@localhost>  Wed, 25 Nov 2026 23:30:00 +0000
+
+proxilens (2.1.0~beta9.1) unstable; urgency=medium
+
+  * Harden observation-only root policy probe socket permissions, request
+    bounds, connection concurrency, and add policyservice input tests.
+  * Keep authorization disabled; no PAM, Polkit, or sudoers integration.
+
+ -- ProxiLens Development <dev@localhost>  Wed, 25 Nov 2026 23:30:00 +0100
+
+proxilens (2.1.0~beta9) resolute; urgency=medium
+
+  * Add isolated root-owned observation-only policy probe using SO_PEERCRED.
+  * Add logind/cgroup session matching diagnostics; never grants authorization.
+  * Add optional systemd unit and manual install/removal documentation.
+
+ -- ProxiLens Development <dev@localhost>  Wed, 25 Nov 2026 23:30:00 +0100
+
+proxilens (2.1.0~beta8) unstable; urgency=medium
+
+  * Add isolated policy-protocol prototype with bounded request envelopes,
+    peer-identity comparison, nonce replay protection, and focused tests.
+  * Keep privileged service, Duo verification, PAM, Polkit, and sudo integration
+    explicitly out of scope.
+
+ -- ProxiLens Development <dev@localhost>  Wed, 25 Nov 2026 23:10:00 +0000
+
 proxilens (2.1.0~beta7) unstable; urgency=medium
 
   * Document shared 15-minute, login-session-scoped authorization target for sudo and Polkit.
