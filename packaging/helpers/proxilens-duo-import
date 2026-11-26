@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Root-only importer. Receives credential JSON on stdin; never logs secrets."""
+import json, os, re, sys, tempfile
+
+if os.geteuid() != 0:
+    print("Dieser Helfer muss über pkexec als root laufen.", file=sys.stderr)
+    sys.exit(1)
+raw = sys.stdin.buffer.read(16385)
+if not raw or len(raw) > 16384:
+    print("Ungültige oder zu große Eingabe.", file=sys.stderr)
+    sys.exit(2)
+try:
+    d = json.loads(raw)
+except Exception:
+    print("Ungültige Konfigurationsdaten.", file=sys.stderr)
+    sys.exit(2)
+fields = {k: str(d.get(k, "")).strip() for k in ("ikey", "skey", "host", "username", "push_type")}
+if not all(fields[k] for k in ("ikey", "skey", "host", "username")):
+    print("Duo-Konfiguration unvollständig.", file=sys.stderr)
+    sys.exit(2)
+if re.search(r"[\s/:?#@]", fields["host"]) or "://" in fields["host"]:
+    print("Ungültiger Duo-API-Hostname.", file=sys.stderr)
+    sys.exit(2)
+for k, v in fields.items():
+    if "\n" in v or "\r" in v or "\x00" in v:
+        print("Ungültige Zeichen in Konfiguration.", file=sys.stderr)
+        sys.exit(2)
+os.makedirs("/etc/proxilens", mode=0o700, exist_ok=True)
+os.chown("/etc/proxilens", 0, 0)
+os.chmod("/etc/proxilens", 0o700)
+fd, tmp = tempfile.mkstemp(prefix="duo.conf.", dir="/etc/proxilens")
+try:
+    os.fchmod(fd, 0o600)
+    os.fchown(fd, 0, 0)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write("[duo]\n")
+        for k in ("ikey", "skey", "host", "username", "push_type"):
+            if fields[k]: f.write(f"{k}={fields[k]}\n")
+        f.flush(); os.fsync(f.fileno())
+    os.replace(tmp, "/etc/proxilens/duo.conf")
+    os.chown("/etc/proxilens/duo.conf", 0, 0)
+    os.chmod("/etc/proxilens/duo.conf", 0o600)
+finally:
+    try: os.unlink(tmp)
+    except FileNotFoundError: pass
+print("Root-Dienst-Konfiguration aktualisiert. Zugangsdaten wurden nicht ausgegeben.")

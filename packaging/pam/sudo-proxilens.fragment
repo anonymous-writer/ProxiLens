@@ -1,0 +1,2 @@
+# ProxiLens: Duo by default; explicit P selection falls through to Ubuntu common-auth.
+auth [success=done auth_err=die ignore=ignore default=die] pam_proxilens.so

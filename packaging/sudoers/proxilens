@@ -1,0 +1,2 @@
+# Require fresh authentication for every sudo invocation; grants no commands.
+Defaults:%sudo timestamp_timeout=0

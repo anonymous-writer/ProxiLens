@@ -124,3 +124,15 @@ fallback and cannot grant privileges. See
 ## Beta 10.8 – Duo-PAM Staging
 
 See `BETA10.8-PAM-DUO-STAGING.md` for the isolated Duo PAM smoke test. The staging scripts do not modify the production sudo PAM stack.
+
+## Beta 10.9 sudo/PAM integration work
+
+See [Beta 10.9 integration status](BETA10.9-SUDO-PAM-INTEGRATION-STATUS.md).
+The sudoers installer is deliberately fail-closed until the real PAM module
+and authorizing policy service exist; it will not alter the live host early.
+
+Beta 10.10 direct Duo-to-PAM/sudo integration work: see `BETA10.10-SUDO-PAM-INTEGRATION.md`.
+
+## Beta 10.10.3 – zentrale Duo-Konfiguration
+
+Siehe `BETA10.10.3-DUO-CENTRAL-CONFIG.md`. Duo wird in ProxiLens gepflegt und mit `./scripts/sync-duo-root.sh` sicher an den Root-Dienst übertragen; die manuelle Doppeleingabe ist deaktiviert.
