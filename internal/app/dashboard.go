@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image/color"
 	"image/png"
@@ -24,6 +25,7 @@ import (
 	"fyne.io/fyne/v2/theme"
 	"fyne.io/fyne/v2/widget"
 
+	"github.com/local/proxilens/internal/authflow"
 	"github.com/local/proxilens/internal/buildinfo"
 	"github.com/local/proxilens/internal/configstore"
 	"github.com/local/proxilens/internal/duo"
@@ -218,35 +220,84 @@ func Run() error {
 	safetyNotice := widget.NewCard("Systemauthentifizierung deaktiviert", "Diese Entwicklungsfassung testet Duo unabhängig. sudo, PAM und Polkit werden nicht verändert.", widget.NewLabel("Es wird keine privilegierte Freigabe erteilt. Die lokale Freigabe ist zunächst nur ein Testzustand und ersetzt keine Ubuntu-Authentifizierung."))
 
 	grantStatus := widget.NewLabel("Testfreigabe: inaktiv")
-	pushButton := widget.NewButtonWithIcon("Duo Push testen", theme.ConfirmIcon(), nil)
-	grantButton := widget.NewButtonWithIcon("15-Minuten-Freigabe simulieren", theme.InfoIcon(), nil)
+	pushButton := widget.NewButtonWithIcon("Duo Push starten", theme.ConfirmIcon(), nil)
+	cancelPushButton := widget.NewButtonWithIcon("Duo-Anfrage abbrechen", theme.CancelIcon(), nil)
+	passwordFallbackButton := widget.NewButtonWithIcon("Manuell auf Ubuntu-Passwort wechseln (Backup)", theme.LoginIcon(), nil)
+	grantButton := widget.NewButtonWithIcon("15-Minuten-Testfreigabe starten", theme.InfoIcon(), nil)
+	revokeButton := widget.NewButtonWithIcon("Testfreigabe widerrufen", theme.DeleteIcon(), nil)
 	grantButton.Disable()
+	passwordFallbackButton.Disable()
+	cancelPushButton.Disable()
+	authState := authflow.New()
+	revokeButton.Disable()
+	var cancelPush context.CancelFunc
 	pushButton.OnTapped = func() {
 		if cfg.DuoIKey == "" || cfg.DuoSKey == "" || cfg.DuoHost == "" || cfg.DuoUsername == "" {
 			dialog.ShowError(fmt.Errorf("Bitte zuerst Duo-Zugangsdaten speichern."), w)
 			return
 		}
+		if err := authState.StartDuo(); err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
 		pushButton.Disable()
+		passwordFallbackButton.Disable()
 		grantButton.Disable()
+		cancelPushButton.Enable()
 		grantStatus.SetText("Duo Push wird gestartet …")
 		pushCfg := duo.Config{IKey: cfg.DuoIKey, SKey: cfg.DuoSKey, Host: cfg.DuoHost, Username: cfg.DuoUsername, PushType: cfg.DuoPushType}
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		cancelPush = cancel
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
-			defer cancel()
 			err := pushCfg.Push(ctx, func(message string) {
 				fyne.Do(func() { grantStatus.SetText(message) })
 			})
+			cancel()
 			fyne.Do(func() {
+				cancelPush = nil
 				pushButton.Enable()
+				cancelPushButton.Disable()
+				passwordFallbackButton.Disable()
 				if err != nil {
-					grantStatus.SetText("Duo fehlgeschlagen: " + err.Error())
+					if errors.Is(err, context.Canceled) {
+						_ = authState.CancelDuo()
+					} else {
+						_ = authState.CompleteDuo(false)
+					}
+					passwordFallbackButton.Enable() // manual backup choice only; no automatic fallback
+					if errors.Is(err, context.Canceled) {
+						grantStatus.SetText("Duo-Anfrage abgebrochen. Keine Freigabe erteilt. Du kannst jetzt manuell das Ubuntu-Passwort als Backup auswählen.")
+						return
+					}
+					grantStatus.SetText("Duo nicht verfügbar/fehlgeschlagen. Keine Freigabe erteilt. Passwort-Backup nur nach manueller Auswahl möglich: " + err.Error())
 					dialog.ShowError(err, w)
 					return
 				}
-				grantStatus.SetText("Duo bestätigt. Du kannst jetzt eine rein lokale Testfreigabe starten.")
+				_ = authState.CompleteDuo(true)
+				grantStatus.SetText("Duo bestätigt. Passwort-Backup bleibt deaktiviert. Die lokale Testfreigabe ist weiterhin nur eine Simulation.")
+				passwordFallbackButton.Disable()
 				grantButton.Enable()
 			})
 		}()
+	}
+	cancelPushButton.OnTapped = func() {
+		if cancelPush != nil {
+			cancelPush()
+			cancelPushButton.Disable()
+			grantStatus.SetText("Abbruch wird ausgeführt …")
+		}
+	}
+	passwordFallbackButton.OnTapped = func() {
+		if err := authState.SelectPassword(); err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		passwordFallbackButton.Disable()
+		dialog.ShowInformation(
+			"Manueller Passwort-Fallback ausgewählt – PAM noch nicht integriert",
+			"Du hast den Backup-Weg ausdrücklich ausgewählt. In dieser Entwicklungsfassung wird noch keine Passwortauthentifizierung durchgeführt. Es wird kein Passwort abgefragt, gespeichert oder an Duo übertragen. Die echte lokale Authentifizierung wird erst mit dem separat geprüften PAM-Adapter aktiviert.",
+			w,
+		)
 	}
 	grantButton.OnTapped = func() {
 		grantButton.Disable()
@@ -259,6 +310,22 @@ func Run() error {
 					return
 				}
 				grantStatus.SetText("SIMULATION aktiv bis " + status.ExpiresAt.Format("15:04:05") + " – keine Systemberechtigung")
+				revokeButton.Enable()
+			})
+		}()
+	}
+	revokeButton.OnTapped = func() {
+		revokeButton.Disable()
+		go func() {
+			_, err := grantbroker.RevokeTestGrant()
+			fyne.Do(func() {
+				if err != nil {
+					grantStatus.SetText("Widerruf fehlgeschlagen: " + err.Error())
+					revokeButton.Enable()
+					return
+				}
+				grantStatus.SetText("Testfreigabe widerrufen – keine Systemberechtigung")
+				grantButton.Disable()
 			})
 		}()
 	}
@@ -275,9 +342,11 @@ func Run() error {
 				}
 				if status.Active {
 					grantStatus.SetText("SIMULATION aktiv bis " + status.ExpiresAt.Format("15:04:05") + " – keine Systemberechtigung")
+					revokeButton.Enable()
 				} else if strings.Contains(grantStatus.Text, "SIMULATION aktiv") {
 					grantStatus.SetText("Testfreigabe abgelaufen – keine Systemberechtigung")
 					grantButton.Enable()
+					revokeButton.Disable()
 				}
 			})
 		}
@@ -398,7 +467,7 @@ func Run() error {
 			statusCard, settingsCard, safetyNotice, setupCard, headerRow, footer,
 			subtitle, languageSelect, topRight, sessionValue, authValue, duoValue,
 			sessionName, authName, duoName,
-			databaseName, saveButton, saveStatus, checkButton, pushButton, grantButton, grantStatus, pushTextTitle, pushTextLabel, pushTypeEntry,
+			databaseName, saveButton, saveStatus, checkButton, pushButton, cancelPushButton, passwordFallbackButton, grantButton, revokeButton, grantStatus, pushTextTitle, pushTextLabel, pushTypeEntry,
 			gnomeInstallButton, gnomeInstallStatus, serviceInstallButton, serviceInstallStatus,
 			githubStatus,
 		} {
@@ -411,7 +480,7 @@ func Run() error {
 		headerRow,
 		footer,
 		nil, nil,
-		container.NewVScroll(container.NewVBox(statusCard, setupCard, settingsCard, safetyNotice, checkButton, pushButton, grantStatus, grantButton)),
+		container.NewVScroll(container.NewVBox(statusCard, setupCard, settingsCard, safetyNotice, checkButton, pushButton, cancelPushButton, passwordFallbackButton, grantStatus, container.NewHBox(grantButton, revokeButton))),
 	)
 	w.SetContent(container.NewPadded(content))
 

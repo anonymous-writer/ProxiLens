@@ -1,0 +1,4 @@
+#%PAM-1.0
+# Isolated Duo-only smoke test. Never copy this file over /etc/pam.d/sudo.
+auth    requisite    pam_duo.so
+account required     pam_unix.so

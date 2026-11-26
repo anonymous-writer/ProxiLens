@@ -96,3 +96,31 @@ Polkit, sudoers, or system-authentication changes.
 ## Beta 9.2 note
 
 See `BETA9.2-README.md` and `POLICY-SERVICE-BETA9-2.md`. The PAM material under `pam/dev/` is design-only; no PAM module is built or installed. The policy probe always reports `authorized: false`.
+
+See `BETA10.1-README.md` for the Beta 10.1 desktop workflow preview.
+
+## Beta 10.2 integration preview
+
+Beta 10.2 adds a fail-closed action-scoped policy decision model. It remains a
+non-activating engineering preview: no PAM module, Polkit agent, sudoers rule,
+or host authentication configuration is installed or changed. See
+`BETA10.2-README.md` and `BETA10.2-INTEGRATION-PREVIEW.md`.
+
+## Beta 10.3 authentication-flow preview
+
+Beta 10.3 models Duo Push as the primary method and Ubuntu password as a manual
+backup choice only after Duo cannot complete. A successful Duo result disables
+the backup control. The backup is never automatic. This preview does not yet
+perform PAM password authentication or grant system privileges; see
+`BETA10.3-AUTH-FLOW-PREVIEW.md`.
+
+## Beta 10.4 – isolated PAM diagnostic
+
+Beta 10.4 includes `cmd/proxilens-pam-test`, a standalone diagnostic for local
+Linux-PAM authentication. It is deliberately not connected to the desktop
+fallback and cannot grant privileges. See
+`docs/integration/BETA10.4-PAM-ISOLATED-TEST.md` before running it.
+
+## Beta 10.8 – Duo-PAM Staging
+
+See `BETA10.8-PAM-DUO-STAGING.md` for the isolated Duo PAM smoke test. The staging scripts do not modify the production sudo PAM stack.
