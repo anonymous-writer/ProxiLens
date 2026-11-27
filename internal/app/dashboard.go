@@ -257,6 +257,14 @@ func Run() error {
 
 	integrationActions := container.NewGridWithColumns(2)
 	runIntegrationScript := func(script, actionLabel string, refresh func()) {
+		// PAM installers require a root-owned 0600 Duo configuration. The
+		// user must explicitly transfer the encrypted GUI settings first.
+		if (script == "install-sudo-pam-proxilens.sh" || script == "install-polkit-pam-proxilens.sh") {
+			if info, statErr := os.Lstat("/etc/proxilens/duo.conf"); statErr != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+				dialog.ShowError(fmt.Errorf("Duo-Konfiguration fehlt unter /etc/proxilens/duo.conf. Bitte zuerst in den Verbindungseinstellungen „Duo-Konfiguration für sudo/Polkit übernehmen“ ausführen. Die Zugangsdaten werden dabei geschützt übertragen."), w)
+				return
+			}
+		}
 		scriptPath, findErr := findIntegrationScript(script)
 		if findErr != nil {
 			dialog.ShowError(findErr, w)
@@ -760,14 +768,18 @@ func findIntegrationScript(name string) (string, error) {
 	if dataHome == "" && home != "" {
 		dataHome = filepath.Join(home, ".local", "share")
 	}
+	// Prefer the files shipped by the installed DEB. A stale development
+	// tree in XDG_DATA_HOME must never shadow the matching packaged scripts
+	// or binaries (notably the Wake-Agent payload).
 	candidates := []string{
+		filepath.Join("/usr", "libexec", "proxilens", "scripts", name),
+		filepath.Join("/usr", "local", "libexec", "proxilens", "scripts", name),
+		filepath.Join("/usr", "local", "share", "proxilens", "scripts", name),
+		filepath.Join("/usr", "share", "proxilens", "scripts", name),
 		filepath.Join(dataHome, "proxilens", "source", "scripts", name),
 		filepath.Join(dataHome, "proxilens", "scripts", name),
 		filepath.Join(home, ".local", "share", "proxilens", "scripts", name),
 		filepath.Join(home, ".local", "share", "proxilens", "source", "scripts", name),
-		filepath.Join("/usr", "libexec", "proxilens", "scripts", name),
-		filepath.Join("/usr", "local", "share", "proxilens", "scripts", name),
-		filepath.Join("/usr", "share", "proxilens", "scripts", name),
 	}
 	if wd, err := os.Getwd(); err == nil {
 		candidates = append(candidates, filepath.Join(wd, "scripts", name))
