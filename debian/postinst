@@ -2,11 +2,16 @@
 set -e
 case "$1" in
   configure)
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    # Start the broker only when an administrator has already provisioned the
+    # root-owned Duo configuration. Never create or overwrite credentials here.
+    if [ -f /etc/proxilens/duo.conf ] && [ ! -L /etc/proxilens/duo.conf ] && \
+       [ "$(stat -c '%u:%a' /etc/proxilens/duo.conf 2>/dev/null || true)" = "0:600" ]; then
+      systemctl enable --now proxilens-policy.service >/dev/null 2>&1 || true
+    fi
     if command -v update-desktop-database >/dev/null 2>&1; then
       update-desktop-database >/dev/null 2>&1 || true
     fi
-    # The agent deliberately remains disabled: it needs each user's
-    # graphical session, session D-Bus and GNOME keyring.
     ;;
 esac
 #DEBHELPER#

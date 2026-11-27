@@ -1,20 +1,38 @@
 #!/usr/bin/make -f
 export DH_VERBOSE = 1
 export DEB_BUILD_MAINT_OPTIONS = hardening=+all
-export CGO_ENABLED = 1
 
 %:
 	dh $@
 
 override_dh_auto_build:
-	mkdir -p build
-	go build -trimpath -ldflags="-s -w $(PROXILENS_LDFLAGS)" -o build/proxilens-ui .
+	mkdir -p build pam
+	CGO_ENABLED=1 go build -trimpath -ldflags="-s -w $(PROXILENS_LDFLAGS)" -o build/proxilens-ui .
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w $(PROXILENS_LDFLAGS)" -o build/proxilens-policy ./cmd/proxilens-policy
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w $(PROXILENS_LDFLAGS)" -o build/proxilens-wake-agent ./cmd/proxilens-wake-agent
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w $(PROXILENS_LDFLAGS)" -o build/proxilens-duo-sync ./cmd/proxilens-duo-sync
+	$(MAKE) -C pam clean all
 
 override_dh_auto_test:
 	go test ./...
 
 override_dh_auto_install:
 	install -D -m 0755 build/proxilens-ui debian/tmp/usr/bin/proxilens-ui
+	install -D -m 0755 build/proxilens-policy debian/tmp/usr/libexec/proxilens/proxilens-policy
+	install -D -m 0755 build/proxilens-wake-agent debian/tmp/usr/libexec/proxilens/proxilens-wake-agent
+	install -D -m 0755 build/proxilens-duo-sync debian/tmp/usr/bin/proxilens-duo-sync
+	install -D -m 0755 packaging/helpers/proxilens-duo-import debian/tmp/usr/libexec/proxilens/proxilens-duo-import
+	install -D -m 0644 pam/pam_proxilens.so debian/tmp/usr/lib/x86_64-linux-gnu/security/pam_proxilens.so
+	install -D -m 0644 packaging/systemd/system/proxilens-policy.service debian/tmp/usr/lib/systemd/system/proxilens-policy.service
+	install -D -m 0644 scripts/systemd/proxilens-wake-agent.service debian/tmp/usr/libexec/proxilens/scripts/systemd/proxilens-wake-agent.service
 	install -D -m 0644 static/icons/proxilens-512px.png debian/tmp/usr/share/icons/hicolor/512x512/apps/proxilens.png
 	install -D -m 0644 packaging/debian/proxilens.desktop debian/tmp/usr/share/applications/proxilens.desktop
 	install -D -m 0644 packaging/debian/proxilens.metainfo.xml debian/tmp/usr/share/metainfo/proxilens.metainfo.xml
+	install -d -m 0755 debian/tmp/usr/libexec/proxilens/scripts
+	for f in install-sudo-pam-proxilens.sh remove-sudo-pam-proxilens.sh install-polkit-pam-proxilens.sh remove-polkit-pam-proxilens.sh install-gnome-extension.sh uninstall-gnome-extension.sh install-wake-agent.sh uninstall-wake-agent.sh sync-duo-root.sh; do install -m 0755 scripts/$$f debian/tmp/usr/libexec/proxilens/scripts/$$f; done
+	install -d -m 0755 debian/tmp/usr/libexec/proxilens/pam
+	install -m 0644 pam/pam_proxilens.so debian/tmp/usr/libexec/proxilens/pam/pam_proxilens.so
+	cp -a gnome-extension debian/tmp/usr/libexec/proxilens/
+	chmod -R a+rX,go-w debian/tmp/usr/libexec/proxilens/gnome-extension
+	install -D -m 0644 packaging/sudoers/proxilens debian/tmp/usr/libexec/proxilens/packaging/sudoers/proxilens
+	install -m 0644 scripts/systemd/proxilens-wake-agent.service debian/tmp/usr/libexec/proxilens/scripts/systemd/proxilens-wake-agent.service

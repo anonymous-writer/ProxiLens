@@ -31,6 +31,11 @@ done
   exit 3
 }
 getent group polkitd >/dev/null || { echo "Systemgruppe polkitd fehlt." >&2; exit 4; }
+systemctl daemon-reload
+systemctl enable --now proxilens-policy.service || {
+  echo "Policy-Dienst konnte nicht gestartet werden." >&2
+  exit 5
+}
 systemctl is-active --quiet proxilens-policy.service || {
   echo "Policy-Dienst ist nicht aktiv." >&2
   exit 5

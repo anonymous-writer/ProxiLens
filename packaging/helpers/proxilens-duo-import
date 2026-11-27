@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Root-only importer. Receives credential JSON on stdin; never logs secrets."""
-import json, os, pwd, re, sys, tempfile
+import json, os, re, sys, tempfile, subprocess
 
 if os.geteuid() != 0:
     print("Dieser Helfer muss über pkexec als root laufen.", file=sys.stderr)
@@ -14,24 +14,12 @@ try:
 except Exception:
     print("Ungültige Konfigurationsdaten.", file=sys.stderr)
     sys.exit(2)
-fields = {k: str(d.get(k, "")).strip() for k in ("ikey", "skey", "host", "username", "push_type", "local_username")}
-if not all(fields[k] for k in ("ikey", "skey", "host", "username", "local_username")):
+fields = {k: str(d.get(k, "")).strip() for k in ("ikey", "skey", "host", "username", "push_type")}
+if not all(fields[k] for k in ("ikey", "skey", "host", "username")):
     print("Duo-Konfiguration unvollständig.", file=sys.stderr)
     sys.exit(2)
 if re.search(r"[\s/:?#@]", fields["host"]) or "://" in fields["host"]:
     print("Ungültiger Duo-API-Hostname.", file=sys.stderr)
-    sys.exit(2)
-if not re.fullmatch(r"[a-z_][a-z0-9_.-]{0,31}[$]?", fields["local_username"]):
-    print("Ungültiger lokaler Benutzername.", file=sys.stderr)
-    sys.exit(2)
-try:
-    invoking_uid = int(os.environ.get("PKEXEC_UID", ""))
-    invoking_user = pwd.getpwuid(invoking_uid).pw_name
-except (ValueError, KeyError):
-    print("Aufrufender Desktop-Benutzer konnte nicht verifiziert werden.", file=sys.stderr)
-    sys.exit(2)
-if invoking_user != fields["local_username"]:
-    print("Duo-Konfiguration darf nur dem aufrufenden lokalen Benutzer zugeordnet werden.", file=sys.stderr)
     sys.exit(2)
 for k, v in fields.items():
     if "\n" in v or "\r" in v or "\x00" in v:
@@ -46,7 +34,7 @@ try:
     os.fchown(fd, 0, 0)
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write("[duo]\n")
-        for k in ("ikey", "skey", "host", "username", "push_type", "local_username"):
+        for k in ("ikey", "skey", "host", "username", "push_type"):
             if fields[k]: f.write(f"{k}={fields[k]}\n")
         f.flush(); os.fsync(f.fileno())
     os.replace(tmp, "/etc/proxilens/duo.conf")
@@ -55,4 +43,13 @@ try:
 finally:
     try: os.unlink(tmp)
     except FileNotFoundError: pass
-print("Root-Dienst-Konfiguration aktualisiert. Zugangsdaten wurden nicht ausgegeben.")
+# Start the packaged broker only after the protected configuration exists.
+try:
+    subprocess.run(["systemctl", "daemon-reload"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    subprocess.run(["systemctl", "enable", "--now", "proxilens-policy.service"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+except (OSError, subprocess.CalledProcessError) as exc:
+    print("Duo-Konfiguration wurde gespeichert, aber der Policy-Dienst konnte nicht gestartet werden.", file=sys.stderr)
+    if isinstance(exc, subprocess.CalledProcessError) and exc.stderr:
+        print(exc.stderr.decode("utf-8", "replace").strip(), file=sys.stderr)
+    sys.exit(3)
+print("Root-Dienst-Konfiguration aktualisiert und Policy-Dienst gestartet. Zugangsdaten wurden nicht ausgegeben.")

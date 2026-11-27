@@ -194,6 +194,36 @@ func Run() error {
 		saveStatus.SetText(i18n.Translations(lang)["saved"])
 		authValue.SetText(i18n.Translations(lang)["authConfigured"])
 	})
+	var refreshIntegrationStatus func()
+	syncRootButton := widget.NewButton("Duo-Konfiguration für sudo/Polkit übernehmen", func() {
+		if _, err := exec.LookPath("/usr/bin/proxilens-duo-sync"); err != nil {
+			dialog.ShowError(fmt.Errorf("Duo-Synchronisierung ist nicht installiert. Bitte ProxiLens-DEB aktualisieren."), w)
+			return
+		}
+		dialog.ShowConfirm("Systemauthentifizierung", "Die gespeicherten Duo-Zugangsdaten werden geschützt an den Root-Policy-Dienst übertragen. Fortfahren?", func(ok bool) {
+			if !ok {
+				return
+			}
+			go func() {
+				cmd := exec.Command("/usr/bin/proxilens-duo-sync", "--db", dbPath)
+				out, err := cmd.CombinedOutput()
+				fyne.Do(func() {
+					if err != nil {
+						msg := strings.TrimSpace(string(out))
+						if msg == "" {
+							msg = err.Error()
+						}
+						dialog.ShowError(fmt.Errorf("Duo-Synchronisierung: %s", msg), w)
+					} else {
+						dialog.ShowInformation("ProxiLens", strings.TrimSpace(string(out)), w)
+					}
+					if refreshIntegrationStatus != nil {
+						refreshIntegrationStatus()
+					}
+				})
+			}()
+		}, w)
+	})
 	duoAuthTitle := widget.NewLabelWithStyle(i18n.Translations(lang)["duoAuthTitle"], fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
 	duoIKeyLabel, duoSKeyLabel := widget.NewLabel(i18n.Translations(lang)["duoIKey"]), widget.NewLabel(i18n.Translations(lang)["duoSKey"])
 	duoHostLabel, duoUsernameLabel := widget.NewLabel(i18n.Translations(lang)["duoHost"]), widget.NewLabel(i18n.Translations(lang)["duoUsername"])
@@ -209,7 +239,7 @@ func Run() error {
 		widget.NewSeparator(), pushTextTitle,
 		pushTextLabel, pushTypeEntry,
 		duoKeyHelp,
-		widget.NewSeparator(), container.NewVBox(databaseName, dbEntry), saveButton, saveStatus,
+		widget.NewSeparator(), container.NewVBox(databaseName, dbEntry), saveButton, syncRootButton, saveStatus,
 	)
 	settingsCard := widget.NewCard("Authentifizierung", "Direkte Duo-Push-Authentifizierung", duoFields)
 
@@ -225,7 +255,6 @@ func Run() error {
 		widget.NewLabel(i18n.Translations(lang)["integrationPolicy"]),
 	))
 
-	var refreshIntegrationStatus func()
 	integrationActions := container.NewGridWithColumns(2)
 	runIntegrationScript := func(script, actionLabel string, refresh func()) {
 		scriptPath, findErr := findIntegrationScript(script)
@@ -333,7 +362,6 @@ func Run() error {
 		integrationActions,
 	))
 
-
 	// GNOME unlock integration: user-session extension and independent wake agent.
 	gnomeInstallStatus := widget.NewLabel(i18n.Translations(lang)["gnomeChecking"])
 	wakeInstallStatus := widget.NewLabel(i18n.Translations(lang)["serviceChecking"])
@@ -349,18 +377,24 @@ func Run() error {
 			return
 		}
 		dialog.ShowConfirm(title, title+"? Der Vorgang wird für deinen Benutzer ausgeführt.", func(ok bool) {
-			if !ok { return }
+			if !ok {
+				return
+			}
 			go func() {
 				cmd := exec.Command("/bin/bash", scriptPath)
 				output, runErr := cmd.CombinedOutput()
 				fyne.Do(func() {
 					if runErr != nil {
 						msg := strings.TrimSpace(string(output))
-						if msg == "" { msg = runErr.Error() }
+						if msg == "" {
+							msg = runErr.Error()
+						}
 						dialog.ShowError(fmt.Errorf("%s: %s", title, msg), w)
 					} else {
 						msg := strings.TrimSpace(string(output))
-						if msg == "" { msg = title + " abgeschlossen." }
+						if msg == "" {
+							msg = title + " abgeschlossen."
+						}
 						dialog.ShowInformation("ProxiLens", msg, w)
 					}
 					refresh()
@@ -377,14 +411,18 @@ func Run() error {
 			filepath.Join("/usr/share/gnome-shell/extensions", "proxilens-input@local"),
 			filepath.Join(os.Getenv("HOME"), ".local/share/gnome-shell/extensions", "proxilens-input@local"),
 		} {
-			if _, err := os.Stat(filepath.Join(dir, "metadata.json")); err == nil { installed = true }
+			if _, err := os.Stat(filepath.Join(dir, "metadata.json")); err == nil {
+				installed = true
+			}
 		}
 		if installed {
 			go func() {
 				cmd := exec.Command("gnome-extensions", "enable", "proxilens-input@local")
 				out, err := cmd.CombinedOutput()
 				fyne.Do(func() {
-					if err != nil { dialog.ShowError(fmt.Errorf("GNOME-Erweiterung konnte nicht aktiviert werden: %v: %s", err, strings.TrimSpace(string(out))), w) }
+					if err != nil {
+						dialog.ShowError(fmt.Errorf("GNOME-Erweiterung konnte nicht aktiviert werden: %v: %s", err, strings.TrimSpace(string(out))), w)
+					}
 					refreshWakeStatus()
 				})
 			}()
@@ -409,12 +447,16 @@ func Run() error {
 				filepath.Join("/usr/share/gnome-shell/extensions", uuid),
 				filepath.Join(os.Getenv("HOME"), ".local/share/gnome-shell/extensions", uuid),
 			} {
-				if _, err := os.Stat(filepath.Join(dir, "metadata.json")); err == nil { extensionInstalled = true }
+				if _, err := os.Stat(filepath.Join(dir, "metadata.json")); err == nil {
+					extensionInstalled = true
+				}
 			}
 			enabled := false
 			out, _ := exec.Command("gnome-extensions", "list", "--enabled").CombinedOutput()
 			for _, id := range strings.Split(string(out), "\n") {
-				if strings.TrimSpace(id) == uuid { enabled = true }
+				if strings.TrimSpace(id) == uuid {
+					enabled = true
+				}
 			}
 			serviceOut, serviceErr := exec.Command("systemctl", "--user", "is-active", "proxilens-wake-agent.service").CombinedOutput()
 			serviceActive := serviceErr == nil && strings.TrimSpace(string(serviceOut)) == "active"
@@ -537,7 +579,9 @@ func Run() error {
 			refreshSession()
 		}
 		refreshIntegrationStatus()
-		if refreshWakeStatus != nil { refreshWakeStatus() }
+		if refreshWakeStatus != nil {
+			refreshWakeStatus()
+		}
 		gnomeInstallButton.SetText(t["gnomeInstall"])
 		if refreshGitHub != nil {
 			githubStatus.SetText(t["githubLoading"])
@@ -721,6 +765,7 @@ func findIntegrationScript(name string) (string, error) {
 		filepath.Join(dataHome, "proxilens", "scripts", name),
 		filepath.Join(home, ".local", "share", "proxilens", "scripts", name),
 		filepath.Join(home, ".local", "share", "proxilens", "source", "scripts", name),
+		filepath.Join("/usr", "libexec", "proxilens", "scripts", name),
 		filepath.Join("/usr", "local", "share", "proxilens", "scripts", name),
 		filepath.Join("/usr", "share", "proxilens", "scripts", name),
 	}

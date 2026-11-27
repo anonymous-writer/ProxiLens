@@ -17,23 +17,12 @@ BACKUP_BIN=""
 log() { printf '[ProxiLens] %s\n' "$*"; }
 die() { printf '[ProxiLens] ERROR: %s\n' "$*" >&2; exit 1; }
 
-command -v go >/dev/null 2>&1 || die "Go is not installed. Install Go 1.27 or newer."
 command -v dbus-monitor >/dev/null 2>&1 || die "dbus-monitor is missing. Install the dbus-bin package."
 command -v systemctl >/dev/null 2>&1 || die "systemctl was not found."
-[[ -f "$ROOT/go.mod" ]] || die "go.mod was not found in the project root."
-[[ -f "$ROOT/cmd/proxilens-wake-agent/main.go" ]] || die "Wake Agent source is missing."
 [[ -s "$SERVICE_SOURCE" ]] || die "systemd service file is missing or empty."
-
-REQUIRED_GO="$(awk '$1 == "go" { print $2; exit }' "$ROOT/go.mod")"
-[[ -n "$REQUIRED_GO" ]] || die "Could not determine the required Go version from go.mod."
-INSTALLED_GO="$(go env GOVERSION 2>/dev/null | sed 's/^go//')"
-[[ -n "$INSTALLED_GO" ]] || die "Could not determine the installed Go version."
-
-version_ge() {
-  [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | head -n1)" == "$2" ]]
-}
-version_ge "$INSTALLED_GO" "$REQUIRED_GO" || \
-  die "Go ${REQUIRED_GO} or newer is required; detected Go ${INSTALLED_GO}."
+PACKAGED_BINARY="${ROOT}/proxilens-wake-agent"
+SOURCE_MAIN="${ROOT}/cmd/proxilens-wake-agent/main.go"
+[[ -x "$PACKAGED_BINARY" || -f "$SOURCE_MAIN" ]] || die "Wake Agent binary/source is missing."
 
 # Build to a temporary file first. A failed build leaves the running agent untouched.
 install -d -m 0755 "$BIN_DIR" "$SERVICE_DIR"
@@ -50,9 +39,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cd "$ROOT"
-log "Building Wake Agent with Go ${INSTALLED_GO} ..."
-go build -trimpath -o "$BUILD_TMP" ./cmd/proxilens-wake-agent
+if [[ -x "$PACKAGED_BINARY" ]]; then
+  log "Using packaged Wake Agent binary."
+  install -m 0755 "$PACKAGED_BINARY" "$BUILD_TMP"
+else
+  command -v go >/dev/null 2>&1 || die "Go is not installed and no packaged Wake Agent binary exists."
+  cd "$ROOT"
+  log "Building Wake Agent from source as the logged-in user ..."
+  go build -trimpath -o "$BUILD_TMP" ./cmd/proxilens-wake-agent
+fi
 [[ -x "$BUILD_TMP" ]] || die "The Wake Agent build did not produce an executable."
 
 SERVICE_TMP="$(mktemp "${SERVICE_DIR}/.${SERVICE_NAME}.new.XXXXXX")"

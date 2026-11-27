@@ -1,5 +1,15 @@
 usr/bin/proxilens-ui
+usr/bin/proxilens-duo-sync
+usr/libexec/proxilens/proxilens-policy
+usr/libexec/proxilens/proxilens-wake-agent
+usr/libexec/proxilens/proxilens-duo-import
+usr/libexec/proxilens/packaging/sudoers/proxilens usr/libexec/proxilens/packaging/sudoers
+usr/libexec/proxilens/scripts/* usr/libexec/proxilens/scripts
+usr/libexec/proxilens/scripts/systemd/proxilens-wake-agent.service usr/libexec/proxilens/scripts/systemd
+usr/libexec/proxilens/pam/pam_proxilens.so usr/libexec/proxilens/pam
+usr/libexec/proxilens/gnome-extension usr/libexec/proxilens
+usr/lib/x86_64-linux-gnu/security/pam_proxilens.so
+usr/lib/systemd/system/proxilens-policy.service
 usr/share/applications/proxilens.desktop
 usr/share/icons/hicolor/512x512/apps/proxilens.png
 usr/share/metainfo/proxilens.metainfo.xml
-packaging/systemd/user/proxilens-grant-broker.service usr/lib/systemd/user

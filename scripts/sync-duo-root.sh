@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [[ ! -x "$ROOT/build/proxilens-duo-sync" ]]; then
-  echo 'Synchronisierungsprogramm fehlt. Bitte zuerst ./scripts/build-install-sudo-pam.sh ausführen.' >&2
-  exit 2
+if [[ -x /usr/bin/proxilens-duo-sync ]]; then
+  exec /usr/bin/proxilens-duo-sync "$@"
 fi
-exec "$ROOT/build/proxilens-duo-sync" "$@"
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -x "$ROOT/build/proxilens-duo-sync" ]]; then
+  exec "$ROOT/build/proxilens-duo-sync" "$@"
+fi
+echo 'ProxiLens Duo-Synchronisierungsprogramm fehlt. Bitte ProxiLens über das DEB-Paket installieren oder den Projekt-Build erstellen.' >&2
+exit 2

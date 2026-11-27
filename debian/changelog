@@ -1,3 +1,14 @@
+proxilens (2.1.0~beta10.12) unstable; urgency=medium
+
+  * Package the Duo PAM module, sudo/Polkit policy broker, Duo credential
+    synchronizer/import helper, integration scripts, GNOME extension payload,
+    and prebuilt wake agent in the Debian package.
+  * Keep privileged integrations opt-in and prevent package removal while PAM
+    still references the ProxiLens module.
+  * Resolve integration scripts from /usr/libexec/proxilens/scripts.
+
+ -- ProxiLens Maintainers <maintainers@example.invalid>  Fri, 27 Nov 2026 20:00:00 +0100
+
 proxilens (2.1.0~beta9.2) unstable; urgency=medium
 
   * Harden observation-only policy probe framing and process identity checks.

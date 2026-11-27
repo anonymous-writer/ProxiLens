@@ -1,6 +1,16 @@
 #!/bin/sh
 set -e
-# Safe development package: no PAM, Polkit or sudoers hooks are installed.
-# Do not perform privileged authentication cleanup here.
+case "$1" in
+  remove|deconfigure)
+    # Never remove the PAM module/broker while PAM still references it: that
+    # could lock the administrator out. Deactivate each integration in GUI first.
+    if grep -q 'pam_proxilens\.so' /etc/pam.d/sudo 2>/dev/null || \
+       grep -q 'pam_proxilens\.so' /etc/pam.d/polkit-1 2>/dev/null; then
+      echo "ProxiLens PAM is still enabled. Remove sudo and Polkit integrations from the GUI before removing the package." >&2
+      exit 1
+    fi
+    systemctl disable --now proxilens-policy.service >/dev/null 2>&1 || true
+    ;;
+esac
 #DEBHELPER#
 exit 0
