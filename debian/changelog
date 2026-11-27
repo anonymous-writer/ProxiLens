@@ -111,3 +111,12 @@ proxilens (1.0.0-1) unstable; urgency=medium
   * Initial Debian package with UI, user wake agent and system-wide GNOME extension.
 
  -- ProxiLens Maintainers <maintainers@example.invalid>  Wed, 11 Nov 2026 18:00:00 +0100
+
+proxilens (2.1.0~beta1+polkit-auto-duo1) unstable; urgency=medium
+
+  * Start Polkit Duo authentication immediately without requiring D confirmation.
+  * Return PAM_SUCCESS directly on Duo allow; fall through to common-auth on
+    Duo denial, broker error, or timeout so the Ubuntu password remains usable.
+  * Keep the existing sudo immediate-P / D-P fallback code unchanged.
+
+ -- ProxiLens Maintainers <maintainers@proxilens.local>  Sat, 28 Nov 2026 00:20:00 +0100
