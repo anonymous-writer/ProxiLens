@@ -83,8 +83,8 @@ static int connect_policy(const char *service, const char *user) {
 
 /*
  * For sudo with a controlling terminal, start Duo first and watch for P
- * without requiring Enter. The terminal is restored on every exit path.
- * For GUI/non-TTY PAM conversations, keep the conversation-agent fallback.
+ * without requiring Enter. For GUI/non-TTY PAM conversations, start Duo
+ * immediately and use the graphical PAM prompt for explicit password fallback.
  */
 static int wait_for_duo_or_password(pam_handle_t *pamh, int fd, int ttyfd,
                                     const struct termios *saved, int raw_active) {
@@ -189,22 +189,36 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
     }
     if (ttyfd >= 0) close(ttyfd);
 
-    /* GUI/non-TTY: let the trusted PAM conversation offer the fallback. */
+    /* GUI/non-TTY (including Polkit): trigger Duo immediately.  The PAM
+       conversation then provides the graphical, explicit password fallback.
+       Unlike a TTY, a GUI agent cannot deliver a raw single key without its
+       normal prompt/submit interaction. */
+    int fd = connect_policy(service, user);
+    if (fd < 0) return PAM_AUTH_ERR;
+
     char *choice = NULL;
     int rc = converse(pamh, PAM_PROMPT_ECHO_ON,
-        "ProxiLens: Duo Push starten oder Ubuntu-Passwort verwenden? [D/P]: ", &choice);
-    if (rc != PAM_SUCCESS || !choice) return PAM_AUTH_ERR;
+        "ProxiLens: Duo Push wurde gestartet. Ubuntu-Passwort statt Duo? P eingeben und bestaetigen; sonst Enter.",
+        &choice);
+    if (rc != PAM_SUCCESS || !choice) {
+        close(fd);
+        return PAM_AUTH_ERR;
+    }
     int manual = (choice[0] == 'p' || choice[0] == 'P') && choice[1] == '\0';
-    int duo = (choice[0] == '\0' || choice[0] == 'd' || choice[0] == 'D') &&
-              choice[1] == '\0';
+    int duo = choice[0] == '\0';
     size_t choice_len = strlen(choice);
     memset(choice, 0, choice_len);
     free(choice);
-    if (manual) return PAM_IGNORE;
-    if (!duo) return PAM_AUTH_ERR;
 
-    int fd = connect_policy(service, user);
-    if (fd < 0) return PAM_AUTH_ERR;
+    if (manual) {
+        close(fd);
+        return PAM_IGNORE; /* continue into the following Ubuntu common-auth */
+    }
+    if (!duo) {
+        close(fd);
+        return PAM_AUTH_ERR;
+    }
+
     int result = wait_for_duo_or_password(pamh, fd, -1, NULL, 0);
     close(fd);
     return result;
