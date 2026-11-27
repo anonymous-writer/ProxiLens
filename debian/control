@@ -9,7 +9,7 @@ Homepage: https://github.com/anonymous-writer/ProxiLens
 
 Package: proxilens
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libgl1, libegl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libwayland-client0, libxkbcommon0, libsecret-1-0, libpam0g, dbus-bin, policykit-1
+Depends: ${shlibs:Depends}, ${misc:Depends}, libgl1, libegl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libwayland-client0, libxkbcommon0, libsecret-1-0, libpam0g, dbus-bin, polkitd, pkexec
 Description: ProxiLens Duo desktop application and optional system integrations
  ProxiLens provides a desktop application with packaged PAM, PolicyKit, GNOME
  extension and wake-agent components. Privileged authentication integrations
