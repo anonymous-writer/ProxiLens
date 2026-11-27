@@ -85,7 +85,14 @@
     "sudoFailed": "Sudo-Konfiguration konnte nicht geändert werden.",
     "sudoNeedsDuo": "Bitte zuerst die Duo-Zugangsdaten speichern.",
     "sudoHelperMissing": "Der ProxiLens-Sudo-Helfer ist nicht installiert.",
-    "sudoDurationInvalid": "Bitte eine gültige Freigabedauer auswählen."
+    "sudoDurationInvalid": "Bitte eine gültige Freigabedauer auswählen.",
+    "integrationTitle": "Systemauthentifizierung",
+    "integrationSubtitle": "Duo-Schutz für administrative Aktionen",
+    "integrationPolicy": "Duo Push ist der Standard. Das Ubuntu-Passwort kann im jeweiligen Systemdialog bewusst manuell gewählt werden. Bei einem Duo-Fehler erfolgt kein automatischer Passwort-Fallback.",
+    "integrationEnabled": "Aktiviert · ProxiLens-PAM ist eingebunden",
+    "integrationUnknown": "Nicht aktiviert oder nicht erkennbar",
+    "policyServiceActive": "Aktiv · läuft im Hintergrund",
+    "policyServiceInactive": "Nicht aktiv · Dienststatus prüfen"
   },
   "en": {
     "check": "Check connection",
@@ -173,7 +180,14 @@
     "sudoFailed": "Could not update sudo configuration.",
     "sudoNeedsDuo": "Please save the Duo credentials first.",
     "sudoHelperMissing": "The ProxiLens sudo helper is not installed.",
-    "sudoDurationInvalid": "Please select a valid approval duration."
+    "sudoDurationInvalid": "Please select a valid approval duration.",
+    "integrationTitle": "System authentication",
+    "integrationSubtitle": "Duo protection for administrative actions",
+    "integrationPolicy": "Duo Push is the default. The Ubuntu password can be selected manually in the respective system dialog. A Duo failure never triggers an automatic password fallback.",
+    "integrationEnabled": "Enabled · ProxiLens PAM is configured",
+    "integrationUnknown": "Not enabled or not detected",
+    "policyServiceActive": "Active · running in the background",
+    "policyServiceInactive": "Inactive · check service status"
   },
   "es": {
     "check": "Comprobar conexión",
@@ -261,6 +275,13 @@
     "sudoFailed": "No se pudo actualizar la configuración de sudo.",
     "sudoNeedsDuo": "Guarda primero las credenciales de Duo.",
     "sudoHelperMissing": "El ayudante sudo de ProxiLens no está instalado.",
-    "sudoDurationInvalid": "Selecciona una duración válida."
+    "sudoDurationInvalid": "Selecciona una duración válida.",
+    "integrationTitle": "Autenticación del sistema",
+    "integrationSubtitle": "Protección Duo para acciones administrativas",
+    "integrationPolicy": "Duo Push es el método predeterminado. La contraseña de Ubuntu se puede elegir manualmente en el diálogo del sistema correspondiente. Un error de Duo nunca activa automáticamente el uso de la contraseña.",
+    "integrationEnabled": "Activado · ProxiLens PAM está configurado",
+    "integrationUnknown": "No activado o no detectado",
+    "policyServiceActive": "Activo · se ejecuta en segundo plano",
+    "policyServiceInactive": "Inactivo · comprueba el servicio"
   }
 }
