@@ -578,6 +578,12 @@ func findIntegrationScript(name string) (string, error) {
 		return "", errors.New("Ungültiger Integrationsskriptname")
 	}
 	candidates := []string{}
+	// Installed desktop builds deploy the fixed, root-owned-by-user control
+	// scripts here. Search this location before source-tree fallbacks so the
+	// GUI works when launched from the application menu (arbitrary CWD).
+	if home, err := os.UserHomeDir(); err == nil && home != "" {
+		candidates = append(candidates, filepath.Join(home, ".local", "share", "proxilens", "scripts", name))
+	}
 	if wd, err := os.Getwd(); err == nil {
 		candidates = append(candidates, filepath.Join(wd, "scripts", name))
 	}
@@ -595,5 +601,5 @@ func findIntegrationScript(name string) (string, error) {
 		}
 		return candidate, nil
 	}
-	return "", fmt.Errorf("Integrationsskript %q wurde nicht gefunden. Starte ProxiLens aus dem Projektverzeichnis oder installiere die ProxiLens-Integrationsskripte systemweit.", name)
+	return "", fmt.Errorf("Integrationsskript %q wurde nicht gefunden. Installiere die Desktop-App erneut mit scripts/install-desktop-app.sh oder starte ProxiLens aus dem Projektverzeichnis.", name)
 }
