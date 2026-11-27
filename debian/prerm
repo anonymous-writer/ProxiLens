@@ -1,6 +1,6 @@
 #!/bin/sh
 set -e
-# System integrations are explicitly managed through the ProxiLens GUI.
-# Do not silently rewrite PAM configuration during package upgrades/removal.
+# Safe development package: no PAM, Polkit or sudoers hooks are installed.
+# Do not perform privileged authentication cleanup here.
 #DEBHELPER#
 exit 0

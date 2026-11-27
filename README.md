@@ -150,14 +150,3 @@ Do not activate this integration until the Go tests, PAM module build, live
 Duo allow/deny tests, explicit local-password path, GNOME Polkit prompt
 behavior, and rollback have been verified on the target Ubuntu installation.
 See `BETA2.1-POLKIT-PAM-INTEGRATION.md` for the staged procedure and limits.
-
-
-## Debian package integration payload
-
-The Debian package ships the GUI-managed integration payload under
-`/usr/libexec/proxilens/`, including the sudo/Polkit installer and rollback
-scripts, the policy broker, PAM module, GNOME extension sources, and the
-prebuilt per-user wake agent. Installing the DEB does **not** activate PAM
-configuration; sudo, Polkit, GNOME extension, and wake-agent actions remain
-explicitly controlled from the GUI. Package removal does not silently rewrite
-PAM configuration; remove active integrations through the GUI first.

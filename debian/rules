@@ -9,9 +9,6 @@ export CGO_ENABLED = 1
 override_dh_auto_build:
 	mkdir -p build
 	go build -trimpath -ldflags="-s -w $(PROXILENS_LDFLAGS)" -o build/proxilens-ui .
-	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w $(PROXILENS_LDFLAGS)" -o build/proxilens-policy ./cmd/proxilens-policy
-	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w $(PROXILENS_LDFLAGS)" -o build/proxilens-wake-agent ./cmd/proxilens-wake-agent
-	$(CC) -O2 -fPIC -Wall -Wextra -Werror -D_FORTIFY_SOURCE=2 -shared -Wl,-z,relro,-z,now -o build/pam_proxilens.so pam/src/pam_proxilens.c -lpam
 
 override_dh_auto_test:
 	go test ./...
@@ -21,16 +18,3 @@ override_dh_auto_install:
 	install -D -m 0644 static/icons/proxilens-512px.png debian/tmp/usr/share/icons/hicolor/512x512/apps/proxilens.png
 	install -D -m 0644 packaging/debian/proxilens.desktop debian/tmp/usr/share/applications/proxilens.desktop
 	install -D -m 0644 packaging/debian/proxilens.metainfo.xml debian/tmp/usr/share/metainfo/proxilens.metainfo.xml
-	install -D -m 0755 build/proxilens-policy debian/tmp/usr/libexec/proxilens/proxilens-policy
-	install -D -m 0755 build/proxilens-wake-agent debian/tmp/usr/libexec/proxilens/proxilens-wake-agent
-	install -D -m 0644 build/pam_proxilens.so debian/tmp/usr/lib/$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)/security/pam_proxilens.so
-	install -D -m 0644 packaging/systemd/system/proxilens-policy.service debian/tmp/usr/lib/systemd/system/proxilens-policy.service
-	install -D -m 0644 packaging/systemd/user/proxilens-grant-broker.service debian/tmp/usr/lib/systemd/user/proxilens-grant-broker.service
-	install -D -m 0644 scripts/systemd/proxilens-wake-agent.service debian/tmp/usr/share/proxilens/source/scripts/systemd/proxilens-wake-agent.service
-	cp -a scripts debian/tmp/usr/libexec/proxilens/
-	cp -a packaging debian/tmp/usr/libexec/proxilens/
-	cp -a gnome-extension debian/tmp/usr/libexec/proxilens/
-	install -D -m 0644 go.mod debian/tmp/usr/libexec/proxilens/go.mod
-	if [ -f go.sum ]; then install -m 0644 go.sum debian/tmp/usr/libexec/proxilens/go.sum; fi
-	install -D -m 0644 cmd/proxilens-wake-agent/main.go debian/tmp/usr/libexec/proxilens/cmd/proxilens-wake-agent/main.go
-	install -D -m 0644 pam/src/pam_proxilens.c debian/tmp/usr/libexec/proxilens/pam/src/pam_proxilens.c

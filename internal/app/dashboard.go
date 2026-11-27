@@ -717,7 +717,6 @@ func findIntegrationScript(name string) (string, error) {
 		dataHome = filepath.Join(home, ".local", "share")
 	}
 	candidates := []string{
-		filepath.Join("/usr/libexec/proxilens/scripts", name),
 		filepath.Join(dataHome, "proxilens", "source", "scripts", name),
 		filepath.Join(dataHome, "proxilens", "scripts", name),
 		filepath.Join(home, ".local", "share", "proxilens", "scripts", name),

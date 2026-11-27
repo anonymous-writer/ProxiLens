@@ -2,15 +2,4 @@ usr/bin/proxilens-ui
 usr/share/applications/proxilens.desktop
 usr/share/icons/hicolor/512x512/apps/proxilens.png
 usr/share/metainfo/proxilens.metainfo.xml
-usr/libexec/proxilens/proxilens-policy
-usr/libexec/proxilens/proxilens-wake-agent
-usr/libexec/proxilens/scripts/*
-usr/libexec/proxilens/packaging/*
-usr/libexec/proxilens/gnome-extension/*
-usr/libexec/proxilens/go.mod
-usr/libexec/proxilens/go.sum
-usr/libexec/proxilens/cmd/*
-usr/libexec/proxilens/pam/*
-usr/lib/*/security/pam_proxilens.so
-usr/lib/systemd/system/proxilens-policy.service
-usr/lib/systemd/user/proxilens-grant-broker.service
+packaging/systemd/user/proxilens-grant-broker.service usr/lib/systemd/user

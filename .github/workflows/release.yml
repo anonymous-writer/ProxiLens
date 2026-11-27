@@ -86,7 +86,7 @@ jobs:
 
           # Build the Debian package from the same architecture-specific runner.
           sudo apt-get update
-          sudo apt-get install -y debhelper dpkg-dev libpam0g-dev
+          sudo apt-get install -y debhelper dpkg-dev
           dpkg-buildpackage -us -uc -b -d
           cp "../proxilens_${DEB_VERSION}-1_$(dpkg --print-architecture).deb" "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.deb"
           sha256sum "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.deb" > "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.deb.sha256"

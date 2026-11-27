@@ -1,12 +1,3 @@
-proxilens (2.1.0~beta7) unstable; urgency=medium
-
-  * Package optional sudo and Polkit PAM integration payloads and policy broker.
-  * Include GNOME extension and prebuilt wake agent with GUI-managed scripts.
-  * Install integration scripts under /usr/libexec/proxilens/scripts.
-  * Keep PAM activation explicit and separate from package installation/removal.
-
- -- ProxiLens Maintainers <maintainers@example.invalid>  Fri, 27 Nov 2026 20:00:00 +0100
-
 proxilens (2.1.0~beta9.2) unstable; urgency=medium
 
   * Harden observation-only policy probe framing and process identity checks.
