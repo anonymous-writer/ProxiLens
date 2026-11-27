@@ -333,6 +333,134 @@ func Run() error {
 		integrationActions,
 	))
 
+
+	// GNOME unlock integration: user-session extension and independent wake agent.
+	gnomeInstallStatus := widget.NewLabel(i18n.Translations(lang)["gnomeChecking"])
+	wakeInstallStatus := widget.NewLabel(i18n.Translations(lang)["serviceChecking"])
+	gnomeInstallButton := widget.NewButton(i18n.Translations(lang)["gnomeInstall"], nil)
+	gnomeRemoveButton := widget.NewButton("GNOME-Erweiterung entfernen", nil)
+	wakeInstallButton := widget.NewButton("Wake-Agent installieren", nil)
+	wakeRemoveButton := widget.NewButton("Wake-Agent entfernen", nil)
+
+	runUserScript := func(script, title string, refresh func()) {
+		scriptPath, err := findIntegrationScript(script)
+		if err != nil {
+			dialog.ShowError(err, w)
+			return
+		}
+		dialog.ShowConfirm(title, title+"? Der Vorgang wird für deinen Benutzer ausgeführt.", func(ok bool) {
+			if !ok { return }
+			go func() {
+				cmd := exec.Command("/bin/bash", scriptPath)
+				output, runErr := cmd.CombinedOutput()
+				fyne.Do(func() {
+					if runErr != nil {
+						msg := strings.TrimSpace(string(output))
+						if msg == "" { msg = runErr.Error() }
+						dialog.ShowError(fmt.Errorf("%s: %s", title, msg), w)
+					} else {
+						msg := strings.TrimSpace(string(output))
+						if msg == "" { msg = title + " abgeschlossen." }
+						dialog.ShowInformation("ProxiLens", msg, w)
+					}
+					refresh()
+				})
+			}()
+		}, w)
+	}
+
+	var refreshWakeStatus func()
+	gnomeInstallButton.OnTapped = func() {
+		// If installed but disabled, enable it without reinstalling.
+		installed := false
+		for _, dir := range []string{
+			filepath.Join("/usr/share/gnome-shell/extensions", "proxilens-input@local"),
+			filepath.Join(os.Getenv("HOME"), ".local/share/gnome-shell/extensions", "proxilens-input@local"),
+		} {
+			if _, err := os.Stat(filepath.Join(dir, "metadata.json")); err == nil { installed = true }
+		}
+		if installed {
+			go func() {
+				cmd := exec.Command("gnome-extensions", "enable", "proxilens-input@local")
+				out, err := cmd.CombinedOutput()
+				fyne.Do(func() {
+					if err != nil { dialog.ShowError(fmt.Errorf("GNOME-Erweiterung konnte nicht aktiviert werden: %v: %s", err, strings.TrimSpace(string(out))), w) }
+					refreshWakeStatus()
+				})
+			}()
+			return
+		}
+		runUserScript("install-gnome-extension.sh", "GNOME-Erweiterung installieren", refreshWakeStatus)
+	}
+	gnomeRemoveButton.OnTapped = func() {
+		runUserScript("uninstall-gnome-extension.sh", "GNOME-Erweiterung entfernen", refreshWakeStatus)
+	}
+	wakeInstallButton.OnTapped = func() {
+		runUserScript("install-wake-agent.sh", "Wake-Agent installieren", refreshWakeStatus)
+	}
+	wakeRemoveButton.OnTapped = func() {
+		runUserScript("uninstall-wake-agent.sh", "Wake-Agent entfernen", refreshWakeStatus)
+	}
+	refreshWakeStatus = func() {
+		go func() {
+			const uuid = "proxilens-input@local"
+			extensionInstalled := false
+			for _, dir := range []string{
+				filepath.Join("/usr/share/gnome-shell/extensions", uuid),
+				filepath.Join(os.Getenv("HOME"), ".local/share/gnome-shell/extensions", uuid),
+			} {
+				if _, err := os.Stat(filepath.Join(dir, "metadata.json")); err == nil { extensionInstalled = true }
+			}
+			enabled := false
+			out, _ := exec.Command("gnome-extensions", "list", "--enabled").CombinedOutput()
+			for _, id := range strings.Split(string(out), "\n") {
+				if strings.TrimSpace(id) == uuid { enabled = true }
+			}
+			serviceOut, serviceErr := exec.Command("systemctl", "--user", "is-active", "proxilens-wake-agent.service").CombinedOutput()
+			serviceActive := serviceErr == nil && strings.TrimSpace(string(serviceOut)) == "active"
+			fyne.Do(func() {
+				t := i18n.Translations(lang)
+				if extensionInstalled && enabled {
+					gnomeInstallStatus.SetText(t["gnomeEnabled"])
+					gnomeInstallButton.SetText(t["gnomeEnabled"])
+					gnomeInstallButton.Disable()
+					gnomeRemoveButton.Enable()
+				} else if extensionInstalled {
+					gnomeInstallStatus.SetText(t["gnomeInstalledDisabled"])
+					gnomeInstallButton.SetText(t["gnomeEnable"])
+					gnomeInstallButton.Enable()
+					gnomeRemoveButton.Enable()
+				} else {
+					gnomeInstallStatus.SetText(t["notInstalled"])
+					gnomeInstallButton.SetText(t["gnomeInstall"])
+					gnomeInstallButton.Enable()
+					gnomeRemoveButton.Disable()
+				}
+				if serviceActive {
+					wakeInstallStatus.SetText(t["serviceActive"])
+					wakeInstallButton.Disable()
+					wakeRemoveButton.Enable()
+				} else {
+					wakeInstallStatus.SetText(t["serviceInactive"])
+					wakeInstallButton.Enable()
+					wakeRemoveButton.Enable() // permits cleanup of a partially installed agent
+				}
+			})
+		}()
+	}
+	refreshWakeStatus()
+	wakeCard := widget.NewCard(
+		"GNOME-Sperrbildschirm & Energiesparmodus",
+		"GNOME-Duo-Schaltfläche und Hintergrunddienst zum Wiederaufnehmen nach Standby/Ruhezustand",
+		container.NewVBox(
+			statusLine("GNOME-Erweiterung", gnomeInstallStatus),
+			container.NewGridWithColumns(2, gnomeInstallButton, gnomeRemoveButton),
+			widget.NewSeparator(),
+			statusLine("ProxiLens Wake-Agent", wakeInstallStatus),
+			container.NewGridWithColumns(2, wakeInstallButton, wakeRemoveButton),
+		),
+	)
+
 	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() {
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -409,6 +537,8 @@ func Run() error {
 			refreshSession()
 		}
 		refreshIntegrationStatus()
+		if refreshWakeStatus != nil { refreshWakeStatus() }
+		gnomeInstallButton.SetText(t["gnomeInstall"])
 		if refreshGitHub != nil {
 			githubStatus.SetText(t["githubLoading"])
 			refreshGitHub()
@@ -427,7 +557,7 @@ func Run() error {
 		languageSelect.PlaceHolder = t["languageSelectPlaceholder"]
 		languageSelect.Refresh()
 		for _, obj := range []fyne.CanvasObject{
-			statusCard, settingsCard, integrationCard, headerRow, footer,
+			statusCard, settingsCard, integrationCard, wakeCard, headerRow, footer,
 			subtitle, languageSelect, topRight, sessionValue, authValue, duoValue,
 			sessionName, authName, duoName,
 			databaseName, saveButton, saveStatus, checkButton, sudoIntegrationValue, polkitIntegrationValue, policyServiceValue,
@@ -442,7 +572,7 @@ func Run() error {
 		headerRow,
 		footer,
 		nil, nil,
-		container.NewVScroll(container.NewVBox(statusCard, integrationCard, settingsCard, checkButton)),
+		container.NewVScroll(container.NewVBox(statusCard, integrationCard, wakeCard, settingsCard, checkButton)),
 	)
 	w.SetContent(container.NewPadded(content))
 
@@ -544,6 +674,7 @@ func Run() error {
 		defer ticker.Stop()
 		for range ticker.C {
 			fyne.Do(refreshIntegrationStatus)
+			fyne.Do(refreshWakeStatus)
 		}
 	}()
 	log.Println("ProxiLens UI gestartet")
@@ -577,12 +708,9 @@ func findIntegrationScript(name string) (string, error) {
 	if filepath.Base(name) != name || !strings.HasSuffix(name, ".sh") {
 		return "", errors.New("Ungültiger Integrationsskriptname")
 	}
-	candidates := []string{}
-	// Installed desktop builds deploy the fixed, root-owned-by-user control
-	// scripts here. Search this location before source-tree fallbacks so the
-	// GUI works when launched from the application menu (arbitrary CWD).
-	if home, err := os.UserHomeDir(); err == nil && home != "" {
-		candidates = append(candidates, filepath.Join(home, ".local", "share", "proxilens", "scripts", name))
+	candidates := []string{
+		filepath.Join(os.Getenv("HOME"), ".local", "share", "proxilens", "source", "scripts", name),
+		filepath.Join(os.Getenv("HOME"), ".local", "share", "proxilens", "scripts", name),
 	}
 	if wd, err := os.Getwd(); err == nil {
 		candidates = append(candidates, filepath.Join(wd, "scripts", name))
@@ -601,5 +729,5 @@ func findIntegrationScript(name string) (string, error) {
 		}
 		return candidate, nil
 	}
-	return "", fmt.Errorf("Integrationsskript %q wurde nicht gefunden. Installiere die Desktop-App erneut mit scripts/install-desktop-app.sh oder starte ProxiLens aus dem Projektverzeichnis.", name)
+	return "", fmt.Errorf("Integrationsskript %q wurde nicht gefunden. Starte ProxiLens aus dem Projektverzeichnis oder installiere die ProxiLens-Integrationsskripte systemweit.", name)
 }

@@ -16,6 +16,15 @@ PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 log() { printf '[%s] %s\n' "$APP_NAME" "$*"; }
 die() { printf '[%s] FEHLER: %s\n' "$APP_NAME" "$*" >&2; exit 1; }
 
+# Deploy the complete source payload before checking for the UI binary.
+# This lets GUI-managed installers work even when proxilens-ui has not been built yet.
+SOURCE_DIR="${HOME}/.local/share/proxilens/source"
+install -d -m 755 "$SOURCE_DIR"
+cp -a "${PROJECT_ROOT}/." "$SOURCE_DIR/"
+rm -rf "${SOURCE_DIR}/.git" "${SOURCE_DIR}/build" "${SOURCE_DIR}/dist"
+find "${SOURCE_DIR}/scripts" -maxdepth 1 -type f -name '*.sh' -exec chmod 755 {} +
+log "Integrations- und Wake-Agent-Quellen bereitgestellt."
+
 # Locate the UI executable in common project/build/download locations.
 BIN_SOURCE=""
 for candidate in \
@@ -51,16 +60,6 @@ done
 log "Installiere ${BIN_NAME} nach ${BIN_DIR} ..."
 install -d -m 755 "$BIN_DIR"
 install -m 755 "$BIN_SOURCE" "${BIN_DIR}/${BIN_NAME}"
-
-# Deploy the PAM integration control scripts for the GUI actions.
-INTEGRATION_DIR="${HOME}/.local/share/proxilens/scripts"
-install -d -m 755 "$INTEGRATION_DIR"
-for script in install-sudo-pam-proxilens.sh remove-sudo-pam-proxilens.sh install-polkit-pam-proxilens.sh remove-polkit-pam-proxilens.sh; do
-    [[ -f "${PROJECT_ROOT}/scripts/${script}" ]] || die "Integrationsskript fehlt: ${script}"
-    install -m 755 "${PROJECT_ROOT}/scripts/${script}" "${INTEGRATION_DIR}/${script}"
-done
-install -d -m 755 "${HOME}/.local/share/proxilens/packaging/sudoers"
-install -m 644 "${PROJECT_ROOT}/packaging/sudoers/proxilens" "${HOME}/.local/share/proxilens/packaging/sudoers/proxilens"
 
 log "Installiere App-Icon ..."
 install -d -m 755 "$ICON_DIR"
