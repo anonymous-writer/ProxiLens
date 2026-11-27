@@ -163,16 +163,41 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
     }
 
     /*
-     * Polkit: start Duo immediately and wait without opening a PAM prompt.
-     * Polkit's agent conversation was the source of the regression: requiring
-     * a D/P response prevented automatic unlock even after Duo had allowed.
-     * On an explicit Duo denial/error/timeout, return PAM_IGNORE so the
-     * following common-auth stack can offer the normal Ubuntu password.
-     * The sudo path above remains unchanged.
+     * Polkit: start Duo Push BEFORE displaying the familiar D/P menu.
+     * Keep the broker connection open while the agent displays the prompt.
+     * D accepts the already-running Push; P closes the request and lets the
+     * following common-auth stack perform the Ubuntu password check.
+     * This preserves the known-working Polkit conversation and removes only
+     * the requirement to press D before the Push starts.
      */
     if (strcmp(service, "polkit-1") == 0) {
         int fd = connect_policy("polkit-1", user);
         if (fd < 0) return PAM_IGNORE;
+
+        char *choice = NULL;
+        const char *prompt =
+            "ProxiLens: Duo Push laeuft bereits. [D] bestaetigen oder [P] Ubuntu-Passwort: ";
+        int rc = converse(pamh, PAM_PROMPT_ECHO_ON, prompt, &choice);
+        if (rc != PAM_SUCCESS || !choice) {
+            close(fd);
+            return PAM_CONV_ERR;
+        }
+
+        int manual = (choice[0] == 'p' || choice[0] == 'P') && choice[1] == '\0';
+        int duo = (choice[0] == '\0' || choice[0] == 'd' || choice[0] == 'D') &&
+                  choice[1] == '\0';
+        size_t choice_len = strlen(choice);
+        memset(choice, 0, choice_len);
+        free(choice);
+
+        if (manual) {
+            close(fd);
+            return PAM_IGNORE;
+        }
+        if (!duo) {
+            close(fd);
+            return PAM_AUTH_ERR;
+        }
 
         char answer[16] = {0};
         size_t received = 0;
