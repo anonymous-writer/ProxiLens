@@ -351,13 +351,10 @@ func handle(c *net.UnixConn, cfg config) {
 	ctx, cancel := context.WithTimeout(context.Background(), 95*time.Second)
 	defer cancel()
 	if err = dc.Push(ctx, nil); err != nil {
-		log.Printf("Duo-Push fehlgeschlagen (%s): %v", service, err)
+		log.Printf("Duo-Push fehlgeschlagen: %v", err)
 		return
 	}
-	log.Printf("Duo-Bestaetigung erfolgreich (%s, Benutzer %s)", service, name)
-	if _, err = c.Write([]byte("ALLOW\n")); err != nil {
-		log.Printf("ALLOW-Antwort konnte nicht an PAM gesendet werden (%s): %v", service, err)
-	}
+	_, _ = c.Write([]byte("ALLOW\n"))
 }
 func main() {
 	if os.Geteuid() != 0 {

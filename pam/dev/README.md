@@ -1,21 +1,41 @@
-# ProxiLens PAM input behavior
+# ProxiLens PAM development scaffold (Beta 9.2)
 
-For `sudo` with a controlling terminal, the PAM module starts the policy/Duo
-transaction immediately. It temporarily switches the controlling terminal to
-non-canonical, no-echo input and watches for `P` without requiring Enter.
-Pressing `P` returns `PAM_IGNORE`, allowing the following Ubuntu `common-auth`
-stack to perform the normal password check. The original terminal settings are
-restored on every exit path.
+This directory is deliberately **not an installable PAM module**. It contains
+requirements and a test plan for a future module. No `.so` is built, no PAM
+service file is shipped, and no file under `/etc/pam.d` is changed.
 
-For GUI/non-TTY conversations (including Polkit), the module also starts Duo
-immediately, then offers an explicit graphical fallback prompt. Entering `P`
-and submitting the prompt returns `PAM_IGNORE` so the following Ubuntu
-`common-auth` stack asks for the system password. Submitting an empty response
-continues waiting for Duo. A GUI PAM conversation does not expose raw keyboard
-key events to a PAM module, so this fallback necessarily uses the graphical
-prompt's normal submit action rather than an Enter-free single-key shortcut.
+## Required behavior for a future implementation
 
-The module must be rebuilt from `pam/src/pam_proxilens.c` by the Debian build
-(`debian/rules` runs `make -C pam clean all`). Do not package or install a stale
-`pam/pam_proxilens.so` from a previous build. Test in a disposable VM before
-enabling PAM integrations on a production host.
+- Fail closed on every transport, protocol, timeout, identity, or policy error.
+- Never treat a successful Duo Push as blanket root authorization.
+- Start Duo Push first when Duo is enabled.
+- Offer Ubuntu-password authentication only after an explicit user choice in a
+  trusted conversation owned by the appropriate authentication agent.
+- Cancellation must return authentication failure; it must not fall through to
+  another PAM module or silently select password authentication.
+- Preserve the normal Ubuntu account and session PAM stacks.
+- Bind any short-lived approval to the requesting UID, logind session, PAM
+  service, and a specific action; re-check the action through sudoers/Polkit.
+- Do not trust environment variables supplied by the client as proof of session
+  identity. Obtain peer credentials from the kernel and session identity from
+  logind over its system interface.
+
+## Why no module is included yet
+
+A PAM module that returns success without a completed, verified transaction
+would weaken authentication. A module that returns ignore or success on an
+error could also produce unsafe stack behavior. The protocol and trusted UI
+conversation contract are not complete enough to implement this safely.
+
+Do not copy any example into `/etc/pam.d`, and do not compile or install a PAM
+shared object from this scaffold. The current root policy probe remains
+observation-only and always returns `authorized: false`.
+
+## Required test gates before implementation
+
+1. Unit tests for every PAM return path, including cancellation and timeout.
+2. Integration tests in a disposable VM with console access.
+3. Verify password login, graphical login, `sudo`, `su`, lock/unlock, and
+   recovery from a broken module before any host activation.
+4. Install only through a transaction with a verified backup and an independent
+   rollback mechanism; keep an existing root shell open during activation.
