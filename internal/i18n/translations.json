@@ -92,7 +92,11 @@
     "integrationEnabled": "Aktiviert · ProxiLens-PAM ist eingebunden",
     "integrationUnknown": "Nicht aktiviert oder nicht erkennbar",
     "policyServiceActive": "Aktiv · läuft im Hintergrund",
-    "policyServiceInactive": "Nicht aktiv · Dienststatus prüfen"
+    "policyServiceInactive": "Nicht aktiv · Dienststatus prüfen",
+    "integrationInstallSudo": "sudo installieren",
+    "integrationRemoveSudo": "sudo deinstallieren",
+    "integrationInstallPolkit": "Polkit installieren",
+    "integrationRemovePolkit": "Polkit deinstallieren"
   },
   "en": {
     "check": "Check connection",
@@ -187,7 +191,11 @@
     "integrationEnabled": "Enabled · ProxiLens PAM is configured",
     "integrationUnknown": "Not enabled or not detected",
     "policyServiceActive": "Active · running in the background",
-    "policyServiceInactive": "Inactive · check service status"
+    "policyServiceInactive": "Inactive · check service status",
+    "integrationInstallSudo": "Install sudo",
+    "integrationRemoveSudo": "Uninstall sudo",
+    "integrationInstallPolkit": "Install Polkit",
+    "integrationRemovePolkit": "Uninstall Polkit"
   },
   "es": {
     "check": "Comprobar conexión",
@@ -282,6 +290,10 @@
     "integrationEnabled": "Activado · ProxiLens PAM está configurado",
     "integrationUnknown": "No activado o no detectado",
     "policyServiceActive": "Activo · se ejecuta en segundo plano",
-    "policyServiceInactive": "Inactivo · comprueba el servicio"
+    "policyServiceInactive": "Inactivo · comprueba el servicio",
+    "integrationInstallSudo": "Instalar sudo",
+    "integrationRemoveSudo": "Desinstalar sudo",
+    "integrationInstallPolkit": "Instalar Polkit",
+    "integrationRemovePolkit": "Desinstalar Polkit"
   }
 }

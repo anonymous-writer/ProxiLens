@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image/color"
 	"image/png"
@@ -223,22 +224,97 @@ func Run() error {
 		statusLine("ProxiLens Policy-Dienst", policyServiceValue),
 		widget.NewLabel(i18n.Translations(lang)["integrationPolicy"]),
 	))
-	refreshIntegrationStatus := func() {
+
+	var refreshIntegrationStatus func()
+	integrationActions := container.NewGridWithColumns(2)
+	runIntegrationScript := func(script, actionLabel string, refresh func()) {
+		scriptPath, findErr := findIntegrationScript(script)
+		if findErr != nil {
+			dialog.ShowError(findErr, w)
+			return
+		}
+		dialog.ShowConfirm(
+			"Systemintegration",
+			actionLabel+"? Dafür werden Administratorrechte benötigt. Die sudo- und Polkit-Integrationen werden getrennt verwaltet.",
+			func(confirmed bool) {
+				if !confirmed {
+					return
+				}
+				go func() {
+					cmd := exec.Command("pkexec", "/bin/bash", scriptPath)
+					output, runErr := cmd.CombinedOutput()
+					fyne.Do(func() {
+						if runErr != nil {
+							msg := strings.TrimSpace(string(output))
+							if msg == "" {
+								msg = runErr.Error()
+							}
+							dialog.ShowError(fmt.Errorf("%s: %s", actionLabel, msg), w)
+						} else {
+							msg := strings.TrimSpace(string(output))
+							if msg == "" {
+								msg = actionLabel + " abgeschlossen."
+							}
+							dialog.ShowInformation("ProxiLens", msg, w)
+						}
+						refresh()
+					})
+				}()
+			},
+			w,
+		)
+	}
+	sudoInstallButton := widget.NewButton("sudo installieren", func() {
+		runIntegrationScript("install-sudo-pam-proxilens.sh", "sudo-PAM-Integration installieren", refreshIntegrationStatus)
+	})
+	sudoRemoveButton := widget.NewButton("sudo deinstallieren", func() {
+		runIntegrationScript("remove-sudo-pam-proxilens.sh", "sudo-PAM-Integration entfernen", refreshIntegrationStatus)
+	})
+	polkitInstallButton := widget.NewButton("Polkit installieren", func() {
+		runIntegrationScript("install-polkit-pam-proxilens.sh", "Polkit-PAM-Integration installieren", refreshIntegrationStatus)
+	})
+	polkitRemoveButton := widget.NewButton("Polkit deinstallieren", func() {
+		runIntegrationScript("remove-polkit-pam-proxilens.sh", "Polkit-PAM-Integration entfernen", refreshIntegrationStatus)
+	})
+	integrationActions.Add(sudoInstallButton)
+	integrationActions.Add(sudoRemoveButton)
+	integrationActions.Add(polkitInstallButton)
+	integrationActions.Add(polkitRemoveButton)
+	integrationCard.SetContent(container.NewVBox(
+		statusLine("sudo (PAM)", sudoIntegrationValue),
+		statusLine("Polkit (PAM)", polkitIntegrationValue),
+		statusLine("ProxiLens Policy-Dienst", policyServiceValue),
+		widget.NewLabel(i18n.Translations(lang)["integrationPolicy"]),
+		widget.NewSeparator(),
+		integrationActions,
+	))
+
+	refreshIntegrationStatus = func() {
 		readable := func(path string) bool {
 			b, err := os.ReadFile(path)
 			return err == nil && strings.Contains(string(b), "pam_proxilens.so")
 		}
 		serviceOut, serviceErr := exec.Command("systemctl", "is-active", "proxilens-policy.service").CombinedOutput()
 		serviceActive := serviceErr == nil && strings.TrimSpace(string(serviceOut)) == "active"
-		if readable("/etc/pam.d/sudo") {
+		sudoInstalled := readable("/etc/pam.d/sudo")
+		polkitInstalled := readable("/etc/pam.d/polkit-1")
+		if sudoInstalled {
 			sudoIntegrationValue.SetText(i18n.Translations(lang)["integrationEnabled"])
+			sudoInstallButton.Disable()
+			sudoRemoveButton.Enable()
 		} else {
 			sudoIntegrationValue.SetText(i18n.Translations(lang)["integrationUnknown"])
+			sudoInstallButton.Enable()
+			sudoRemoveButton.Disable()
 		}
-		if readable("/etc/pam.d/polkit-1") {
+		if polkitInstalled {
 			polkitIntegrationValue.SetText(i18n.Translations(lang)["integrationEnabled"])
+			polkitInstallButton.Disable()
+			polkitRemoveButton.Enable()
 		} else {
 			polkitIntegrationValue.SetText(i18n.Translations(lang)["integrationUnknown"])
+			polkitInstallButton.Enable()
+			polkitRemoveButton.Disable()
 		}
 		if serviceActive {
 			policyServiceValue.SetText(i18n.Translations(lang)["policyServiceActive"])
@@ -247,6 +323,15 @@ func Run() error {
 		}
 	}
 	refreshIntegrationStatus()
+
+	integrationCard.SetContent(container.NewVBox(
+		statusLine("sudo (PAM)", sudoIntegrationValue),
+		statusLine("Polkit (PAM)", polkitIntegrationValue),
+		statusLine("ProxiLens Policy-Dienst", policyServiceValue),
+		widget.NewLabel(i18n.Translations(lang)["integrationPolicy"]),
+		widget.NewSeparator(),
+		integrationActions,
+	))
 
 	checkButton := widget.NewButtonWithIcon("Verbindung prüfen", theme.ViewRefreshIcon(), func() {
 		go func() {
@@ -293,6 +378,10 @@ func Run() error {
 		statusCard.Title, statusCard.Subtitle = t["statusTitle"], t["statusSubtitle"]
 		settingsCard.Title, settingsCard.Subtitle = t["settingsTitle"], t["settingsSubtitle"]
 		integrationCard.Title, integrationCard.Subtitle = t["integrationTitle"], t["integrationSubtitle"]
+		sudoInstallButton.SetText(t["integrationInstallSudo"])
+		sudoRemoveButton.SetText(t["integrationRemoveSudo"])
+		polkitInstallButton.SetText(t["integrationInstallPolkit"])
+		polkitRemoveButton.SetText(t["integrationRemovePolkit"])
 		saveButton.SetText(t["save"])
 		checkButton.SetText(t["check"])
 		topRight.SetText(t["topRight"])
@@ -480,4 +569,31 @@ func commandOutput(name string, args ...string) string {
 		return string(out)
 	}
 	return string(out)
+}
+
+// findIntegrationScript locates the administrator script in a source checkout.
+// The GUI never constructs privileged shell commands from user input.
+func findIntegrationScript(name string) (string, error) {
+	if filepath.Base(name) != name || !strings.HasSuffix(name, ".sh") {
+		return "", errors.New("Ungültiger Integrationsskriptname")
+	}
+	candidates := []string{}
+	if wd, err := os.Getwd(); err == nil {
+		candidates = append(candidates, filepath.Join(wd, "scripts", name))
+	}
+	if exe, err := os.Executable(); err == nil {
+		dir := filepath.Dir(exe)
+		for i := 0; i < 5; i++ {
+			candidates = append(candidates, filepath.Join(dir, "scripts", name))
+			dir = filepath.Dir(dir)
+		}
+	}
+	for _, candidate := range candidates {
+		info, err := os.Lstat(candidate)
+		if err != nil || !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
+			continue
+		}
+		return candidate, nil
+	}
+	return "", fmt.Errorf("Integrationsskript %q wurde nicht gefunden. Starte ProxiLens aus dem Projektverzeichnis oder installiere die ProxiLens-Integrationsskripte systemweit.", name)
 }

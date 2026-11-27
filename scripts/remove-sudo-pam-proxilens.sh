@@ -19,6 +19,10 @@ if ! visudo -c; then
   echo "sudoers-Prüfung fehlgeschlagen; vorheriger Stand wiederhergestellt. Sicherung: $backup" >&2
   exit 2
 fi
-systemctl disable --now proxilens-policy.service || true
+if [[ -f /etc/pam.d/polkit-1 ]] && grep -q 'pam_proxilens\.so' /etc/pam.d/polkit-1; then
+  echo 'Polkit-PAM ist weiterhin aktiv; Policy-Dienst bleibt für Polkit eingeschaltet.'
+else
+  systemctl disable --now proxilens-policy.service || true
+fi
 echo "ProxiLens-sudo-Integration entfernt. Sicherung: $backup"
 echo 'Die Duo-Konfiguration bleibt erhalten.'

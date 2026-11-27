@@ -52,6 +52,16 @@ log "Installiere ${BIN_NAME} nach ${BIN_DIR} ..."
 install -d -m 755 "$BIN_DIR"
 install -m 755 "$BIN_SOURCE" "${BIN_DIR}/${BIN_NAME}"
 
+# Deploy the PAM integration control scripts for the GUI actions.
+INTEGRATION_DIR="${HOME}/.local/share/proxilens/scripts"
+install -d -m 755 "$INTEGRATION_DIR"
+for script in install-sudo-pam-proxilens.sh remove-sudo-pam-proxilens.sh install-polkit-pam-proxilens.sh remove-polkit-pam-proxilens.sh; do
+    [[ -f "${PROJECT_ROOT}/scripts/${script}" ]] || die "Integrationsskript fehlt: ${script}"
+    install -m 755 "${PROJECT_ROOT}/scripts/${script}" "${INTEGRATION_DIR}/${script}"
+done
+install -d -m 755 "${HOME}/.local/share/proxilens/packaging/sudoers"
+install -m 644 "${PROJECT_ROOT}/packaging/sudoers/proxilens" "${HOME}/.local/share/proxilens/packaging/sudoers/proxilens"
+
 log "Installiere App-Icon ..."
 install -d -m 755 "$ICON_DIR"
 install -m 644 "$ICON_SOURCE" "${ICON_DIR}/${ICON_NAME}.png"
