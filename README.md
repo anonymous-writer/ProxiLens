@@ -136,3 +136,17 @@ Beta 10.10 direct Duo-to-PAM/sudo integration work: see `BETA10.10-SUDO-PAM-INTE
 ## Beta 10.10.3 – zentrale Duo-Konfiguration
 
 Siehe `BETA10.10.3-DUO-CENTRAL-CONFIG.md`. Duo wird in ProxiLens gepflegt und mit `./scripts/sync-duo-root.sh` sicher an den Root-Dienst übertragen; die manuelle Doppeleingabe ist deaktiviert.
+
+
+## Beta 2.1 – Polkit PAM integration source (experimental)
+
+The source tree now contains an experimental Polkit PAM integration path.
+It is **not activated by the normal desktop installation**. It shares the
+Duo authorization broker with sudo but uses a distinct `polkit-1` caller
+identity check and a `root:polkitd` socket. The existing sudo peer check is
+kept separate.
+
+Do not activate this integration until the Go tests, PAM module build, live
+Duo allow/deny tests, explicit local-password path, GNOME Polkit prompt
+behavior, and rollback have been verified on the target Ubuntu installation.
+See `BETA2.1-POLKIT-PAM-INTEGRATION.md` for the staged procedure and limits.

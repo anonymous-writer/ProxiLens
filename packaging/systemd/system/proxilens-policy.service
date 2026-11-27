@@ -1,5 +1,5 @@
 [Unit]
-Description=ProxiLens Duo authorization broker for sudo PAM
+Description=ProxiLens Duo authorization broker for sudo and Polkit PAM
 After=network-online.target
 Wants=network-online.target
 

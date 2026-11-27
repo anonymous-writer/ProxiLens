@@ -1,4 +1,4 @@
-// proxilens-policy is a root-owned Duo authorization broker for sudo's PAM stack.
+// proxilens-policy is a root-owned Duo authorization broker for sudo and Polkit PAM.
 // It fails closed on every configuration, peer-identity, and Duo error.
 package main
 
@@ -202,10 +202,130 @@ func peerIsSudo(conn *net.UnixConn, pamUser, configuredLocalUser string) error {
 	return nil
 }
 
+// peerIsPolkit accepts only the root-owned, socket-activated Polkit helper.
+// PAM_USER is separately bound to the configured local Duo account.
+func peerIsPolkit(conn *net.UnixConn, pamUser, configuredLocalUser string) error {
+	raw, err := conn.SyscallConn()
+	if err != nil {
+		return err
+	}
+	var cred *syscall.Ucred
+	var sockErr error
+	if err = raw.Control(func(fd uintptr) {
+		cred, sockErr = syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
+	}); err != nil {
+		return err
+	}
+	if sockErr != nil {
+		return sockErr
+	}
+	if cred == nil || cred.Pid <= 0 {
+		return errors.New("Polkit-SO_PEERCRED fehlt oder ungueltig")
+	}
+	if cred.Uid != 0 {
+		return errors.New("Polkit-IPC-Peer ist nicht root")
+	}
+
+	const helperPath = "/usr/lib/polkit-1/polkit-agent-helper-1"
+	proc := fmt.Sprintf("/proc/%d", cred.Pid)
+	start, err := procStartTime(cred.Pid)
+	if err != nil {
+		return err
+	}
+	exe, err := os.Readlink(proc + "/exe")
+	if err != nil {
+		return err
+	}
+	if exe != helperPath {
+		return fmt.Errorf("IPC-Aufrufer ist nicht der Polkit-Helper (Prozesspfad: %q)", exe)
+	}
+
+	// Ensure the executable itself is a regular, root-owned, non-writable file.
+	helperInfo, err := os.Stat(helperPath)
+	if err != nil {
+		return err
+	}
+	if !helperInfo.Mode().IsRegular() || helperInfo.Mode().Perm()&0022 != 0 {
+		return errors.New("Polkit-Helper-Datei ist keine sichere reguläre Datei")
+	}
+	if sys, ok := helperInfo.Sys().(*syscall.Stat_t); !ok || sys.Uid != 0 {
+		return errors.New("Polkit-Helper-Datei gehoert nicht root")
+	}
+
+	status, err := os.ReadFile(proc + "/status")
+	if err != nil {
+		return err
+	}
+	foundUID := false
+	for _, line := range strings.Split(string(status), "\n") {
+		if strings.HasPrefix(line, "Uid:") {
+			fields := strings.Fields(line)
+			if len(fields) < 3 {
+				return errors.New("Polkit-Helper-UID-Status unvollstaendig")
+			}
+			realUID, e := strconv.ParseUint(fields[1], 10, 32)
+			if e != nil {
+				return e
+			}
+			effectiveUID, e := strconv.ParseUint(fields[2], 10, 32)
+			if e != nil {
+				return e
+			}
+			if realUID != 0 || effectiveUID != 0 || uint64(cred.Uid) != effectiveUID {
+				return errors.New("Polkit-Helper laeuft nicht vollstaendig als root")
+			}
+			foundUID = true
+			break
+		}
+	}
+	if !foundUID {
+		return errors.New("Polkit-Helper-UID-Status fehlt")
+	}
+
+	cmdline, err := os.ReadFile(proc + "/cmdline")
+	if err != nil {
+		return err
+	}
+	hasSocketActivated := false
+	for _, arg := range strings.Split(string(cmdline), "\x00") {
+		if arg == "--socket-activated" {
+			hasSocketActivated = true
+			break
+		}
+	}
+	if !hasSocketActivated {
+		return errors.New("Polkit-Helper wurde nicht socket-aktiviert gestartet")
+	}
+
+	if pamUser != configuredLocalUser {
+		return errors.New("PAM-Benutzer ist nicht an das konfigurierte Duo-Konto gebunden")
+	}
+	if _, err := user.Lookup(pamUser); err != nil {
+		return fmt.Errorf("PAM-Benutzer unbekannt: %w", err)
+	}
+
+	// Re-check process identity to detect PID reuse or executable replacement.
+	end, err := procStartTime(cred.Pid)
+	if err != nil || end != start {
+		return errors.New("Polkit-Helper-Prozessidentitaet hat sich waehrend der Pruefung geaendert")
+	}
+	exe2, err := os.Readlink(proc + "/exe")
+	if err != nil || exe2 != exe {
+		return errors.New("Polkit-Helper wurde waehrend der Pruefung ausgetauscht")
+	}
+	return nil
+}
+
 func handle(c *net.UnixConn, cfg config) {
 	defer c.Close()
 	_ = c.SetDeadline(time.Now().Add(100 * time.Second))
 	rd := bufio.NewReaderSize(c, 256)
+	service, err := rd.ReadString('\n')
+	if err != nil || len(service) > 32 || !strings.HasSuffix(service, "\n") {
+		return
+	}
+	service = strings.TrimSuffix(service, "\n")
+
 	name, err := rd.ReadString('\n')
 	if err != nil || len(name) > 130 || !strings.HasSuffix(name, "\n") {
 		return
@@ -214,8 +334,17 @@ func handle(c *net.UnixConn, cfg config) {
 	if name == "" || strings.ContainsAny(name, "\r\x00") {
 		return
 	}
-	if err = peerIsSudo(c, name, cfg.LocalUser); err != nil {
-		log.Printf("sudo-Peer-Prüfung abgelehnt: %v", err)
+
+	switch service {
+	case "sudo":
+		err = peerIsSudo(c, name, cfg.LocalUser)
+	case "polkit-1":
+		err = peerIsPolkit(c, name, cfg.LocalUser)
+	default:
+		err = fmt.Errorf("nicht erlaubter PAM-Dienst: %q", service)
+	}
+	if err != nil {
+		log.Printf("Peer-Prüfung für %s abgelehnt: %v", service, err)
 		return
 	}
 	dc := duo.Config{IKey: cfg.IKey, SKey: cfg.SKey, Host: cfg.Host, Username: cfg.DuoUser, PushType: cfg.PushType}
@@ -235,6 +364,16 @@ func main() {
 	cfg, err := loadConfig()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "ProxiLens Duo-Konfiguration abgelehnt:", err)
+		os.Exit(1)
+	}
+	polkitGroup, err := user.LookupGroup("polkitd")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Polkit-Gruppe nicht gefunden:", err)
+		os.Exit(1)
+	}
+	polkitGID, err := strconv.ParseUint(polkitGroup.Gid, 10, 32)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Ungueltige Polkit-GID:", err)
 		os.Exit(1)
 	}
 	dir := filepath.Dir(socketPath)
@@ -277,8 +416,18 @@ func main() {
 		panic(err)
 	}
 	defer os.Remove(socketPath)
-	_ = os.Chown(socketPath, 0, 0)
-	_ = os.Chmod(socketPath, 0600)
+	if err = os.Chown(socketPath, 0, int(polkitGID)); err != nil {
+		_ = ln.Close()
+		_ = os.Remove(socketPath)
+		fmt.Fprintln(os.Stderr, "Policy-Socket konnte nicht der Polkit-Gruppe zugewiesen werden:", err)
+		os.Exit(1)
+	}
+	if err = os.Chmod(socketPath, 0660); err != nil {
+		_ = ln.Close()
+		_ = os.Remove(socketPath)
+		fmt.Fprintln(os.Stderr, "Policy-Socket-Berechtigungen konnten nicht gesetzt werden:", err)
+		os.Exit(1)
+	}
 	for {
 		c, e := ln.AcceptUnix()
 		if e != nil {

@@ -41,20 +41,31 @@ static int converse(pam_handle_t *pamh, int style, const char *msg, char **reply
 
 PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv) {
     (void)flags; (void)argc; (void)argv;
+
+    const char *service = NULL;
     const char *user = NULL;
-    if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS || !user || !*user || strlen(user) >= MAX_USER)
+
+    if (pam_get_item(pamh, PAM_SERVICE, (const void **)&service) != PAM_SUCCESS ||
+        !service || (strcmp(service, "sudo") != 0 && strcmp(service, "polkit-1") != 0))
+        return PAM_AUTH_ERR;
+
+    if (pam_get_user(pamh, &user, NULL) != PAM_SUCCESS ||
+        !user || !*user || strlen(user) >= MAX_USER)
         return PAM_AUTH_ERR;
 
     char *choice = NULL;
     int rc = converse(pamh, PAM_PROMPT_ECHO_ON,
         "ProxiLens: [D]uo Push (Standard) oder [P] Ubuntu-Passwort (manuell waehlen)? ", &choice);
     if (rc != PAM_SUCCESS || !choice) return PAM_AUTH_ERR;
+
     int manual = (choice[0] == 'p' || choice[0] == 'P') && choice[1] == '\0';
-    int duo = (choice[0] == '\0' || choice[0] == 'd' || choice[0] == 'D') && choice[1] == '\0';
+    int duo = (choice[0] == '\0' || choice[0] == 'd' || choice[0] == 'D') &&
+              choice[1] == '\0';
     size_t choice_len = strlen(choice);
     memset(choice, 0, choice_len);
     free(choice);
-    if (manual) return PAM_IGNORE; /* PAM stack continues to Ubuntu common-auth only on explicit P. */
+
+    if (manual) return PAM_IGNORE;
     if (!duo) return PAM_AUTH_ERR;
 
     char note[] = "ProxiLens: Duo Push wird angefordert. Bitte am Smartphone bestaetigen.";
@@ -62,32 +73,54 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
 
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
     if (fd < 0) return PAM_AUTH_ERR;
+
     struct timeval tv = {.tv_sec = 100, .tv_usec = 0};
     (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     (void)setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    struct sockaddr_un addr; memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX; strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path)-1);
-    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) { close(fd); return PAM_AUTH_ERR; }
-    char req[MAX_USER + 2]; int n = snprintf(req, sizeof(req), "%s\n", user);
-    if (n <= 1 || (size_t)n >= sizeof(req)) { close(fd); return PAM_AUTH_ERR; }
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
+
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        close(fd);
+        return PAM_AUTH_ERR;
+    }
+
+    char req[MAX_USER + 16];
+    int n = snprintf(req, sizeof(req), "%s\n%s\n", service, user);
+    if (n <= 2 || (size_t)n >= sizeof(req)) {
+        close(fd);
+        return PAM_AUTH_ERR;
+    }
+
     size_t sent = 0;
     while (sent < (size_t)n) {
         ssize_t w = write(fd, req + sent, (size_t)n - sent);
         if (w < 0 && errno == EINTR) continue;
-        if (w <= 0) { close(fd); return PAM_AUTH_ERR; }
+        if (w <= 0) {
+            close(fd);
+            return PAM_AUTH_ERR;
+        }
         sent += (size_t)w;
     }
     memset(req, 0, sizeof(req));
-    char answer[16] = {0}; size_t received = 0;
-    while (received < sizeof(answer)-1) {
-        ssize_t r = read(fd, answer + received, sizeof(answer)-1-received);
+
+    char answer[16] = {0};
+    size_t received = 0;
+    while (received < sizeof(answer) - 1) {
+        ssize_t r = read(fd, answer + received, sizeof(answer) - 1 - received);
         if (r < 0 && errno == EINTR) continue;
         if (r <= 0) break;
         received += (size_t)r;
         if (memchr(answer, '\n', received) != NULL) break;
     }
     close(fd);
-    if (received == 6 && memcmp(answer, "ALLOW\n", 6) == 0) return PAM_SUCCESS;
+
+    if (received == 6 && memcmp(answer, "ALLOW\n", 6) == 0)
+        return PAM_SUCCESS;
+
     memset(answer, 0, sizeof(answer));
     return PAM_AUTH_ERR;
 }

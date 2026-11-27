@@ -32,4 +32,4 @@ CGO_ENABLED=0 go build -trimpath -o build/proxilens-policy ./cmd/proxilens-polic
 CGO_ENABLED=0 go build -trimpath -o build/proxilens-duo-sync ./cmd/proxilens-duo-sync
 make -C pam clean all
 echo 'Build erfolgreich. Installiere jetzt die Dateien mit sudo …'
-exec sudo -- "$ROOT/scripts/build-install-sudo-pam.sh" --install
+exec sudo -- bash "$ROOT/scripts/build-install-sudo-pam.sh" --install
