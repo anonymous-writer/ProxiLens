@@ -14,13 +14,32 @@ jobs:
   build-deb:
     name: Build test DEB (amd64)
     runs-on: ubuntu-24.04
+
     steps:
       - name: Check out selected branch
         uses: actions/checkout@v7
 
+      # Microsoft repository is not required for this build.
+      # Disable it on the temporary GitHub runner if it returns 403.
+      - name: Disable unavailable Microsoft APT repository
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for f in /etc/apt/sources.list.d/*; do
+            if [ -f "$f" ] &&
+               grep -q "packages.microsoft.com" "$f"; then
+              echo "Disabling unavailable repository: $f"
+              sudo mv "$f" "${f}.disabled"
+            fi
+          done
+
       - name: Install Debian build dependencies
         run: |
+          set -euo pipefail
+
           sudo apt-get update
+
           sudo apt-get install -y \
             build-essential \
             debhelper \
@@ -51,13 +70,19 @@ jobs:
           PROXILENS_VERSION: test-${{ github.run_number }}
           PROXILENS_COMMIT: ${{ github.sha }}
           PROXILENS_BUILD_KIND: Test-Build
+        shell: bash
         run: |
           set -euo pipefail
+
           SHORT_SHA="${GITHUB_SHA:0:7}"
+
           export PROXILENS_LDFLAGS="-X github.com/local/proxilens/internal/buildinfo.Version=${PROXILENS_VERSION} -X github.com/local/proxilens/internal/buildinfo.Commit=${PROXILENS_COMMIT} -X github.com/local/proxilens/internal/buildinfo.BuildKind=${PROXILENS_BUILD_KIND}"
+
           BASE_VERSION="$(git describe --tags --abbrev=0 2>/dev/null || echo v2.0.1)"
           DEB_VERSION="${BASE_VERSION#v}~test.${GITHUB_RUN_NUMBER}+${SHORT_SHA}"
+
           sed -i "1s/^proxilens ([^)]*)/proxilens (${DEB_VERSION}-1)/" debian/changelog
+
           dpkg-buildpackage -us -uc -b -d
 
           VERSION="$(dpkg-parsechangelog --show-field Version)"
@@ -67,13 +92,14 @@ jobs:
           test "$ARCH" = "amd64"
           test -f "$PACKAGE"
 
-          # Fail the CI job if this accidentally regresses to the old
-          # diagnostic-only package or omits any optional integration payload.
           DEPENDS="$(dpkg-deb -f "$PACKAGE" Depends)"
+
           echo "$DEPENDS" | grep -q 'polkitd'
           echo "$DEPENDS" | grep -q 'pkexec'
           ! echo "$DEPENDS" | grep -q 'policykit-1'
+
           CONTENTS="$(dpkg-deb --contents "$PACKAGE")"
+
           for required in \
             "/usr/bin/proxilens-ui" \
             "/usr/libexec/proxilens/proxilens-policy" \
@@ -84,17 +110,27 @@ jobs:
             "/usr/libexec/proxilens/scripts/install-gnome-extension.sh" \
             "/usr/libexec/proxilens/scripts/install-wake-agent.sh" \
             "/usr/libexec/proxilens/gnome-extension/proxilens-input@local/metadata.json"; do
+
             echo "$CONTENTS" | grep -Fq "$required" || {
               echo "DEB payload is missing: $required" >&2
               exit 1
             }
           done
-          echo "$CONTENTS" | grep -Fq "/usr/lib/x86_64-linux-gnu/security/pam_proxilens.so"
+
+          echo "$CONTENTS" | grep -Fq \
+            "/usr/lib/x86_64-linux-gnu/security/pam_proxilens.so"
+
           mkdir -p dist
-          cp "$PACKAGE" "dist/ProxiLens-test-${VERSION}-amd64.deb"
-          sha256sum "dist/ProxiLens-test-${VERSION}-amd64.deb" \
+
+          cp "$PACKAGE" \
+            "dist/ProxiLens-test-${VERSION}-amd64.deb"
+
+          sha256sum \
+            "dist/ProxiLens-test-${VERSION}-amd64.deb" \
             > "dist/ProxiLens-test-${VERSION}-amd64.deb.sha256"
-          dpkg-deb --info "dist/ProxiLens-test-${VERSION}-amd64.deb"
+
+          dpkg-deb --info \
+            "dist/ProxiLens-test-${VERSION}-amd64.deb"
 
       - name: Upload test DEB
         uses: actions/upload-artifact@v7
