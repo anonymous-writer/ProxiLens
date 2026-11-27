@@ -11,6 +11,7 @@ ExecStart=/usr/libexec/proxilens/proxilens-policy
 Restart=on-failure
 RestartSec=2
 NoNewPrivileges=true
+UMask=0077
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true

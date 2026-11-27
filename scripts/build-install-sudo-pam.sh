@@ -17,7 +17,7 @@ if [[ $EUID -eq 0 ]]; then
   install -o root -g root -m 0644 "$ROOT/packaging/systemd/system/proxilens-policy.service" /usr/lib/systemd/system/proxilens-policy.service
   systemctl daemon-reload
   echo 'PAM-Modul, Policy-Dienst und systemd-Unit installiert. PAM/sudoers sind noch NICHT verändert.'
-  echo 'Als Nächstes: sudo ./scripts/configure-duo-root.sh und danach sudo ./scripts/install-sudo-pam-proxilens.sh'
+  echo 'Als Nächstes: ./scripts/sync-duo-root.sh und danach sudo ./scripts/install-sudo-pam-proxilens.sh'
   exit 0
 fi
 
