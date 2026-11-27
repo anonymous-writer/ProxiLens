@@ -199,45 +199,43 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
     }
     if (ttyfd >= 0) close(ttyfd);
 
-    /* GUI/non-TTY (including Polkit): trigger Duo immediately.  The PAM
-       conversation then provides the graphical, explicit password fallback.
-       Unlike a TTY, a GUI agent cannot deliver a raw single key without its
-       normal prompt/submit interaction. */
-    int fd = connect_policy(service, user);
-    if (fd < 0) { pl_log("Polkit: policy connection failed"); return PAM_AUTH_ERR; }
-    pl_log("Polkit: Duo request started; awaiting agent response");
-
+    /* GUI/non-TTY (including Polkit): preserve the previously working
+       prompt-first flow.  Immediate Duo plus raw single-key switching is
+       supported only for sudo with a controlling terminal. */
     char *choice = NULL;
-    /* polkit-agent-helper's PAM conversation is password-oriented. Use the
-       supported hidden-input prompt instead of PAM_PROMPT_ECHO_ON. */
-    int rc = converse(pamh, PAM_PROMPT_ECHO_OFF,
-        "Duo Push laeuft. Ubuntu-Passwort statt Duo? P eingeben; fuer Duo leer bestaetigen.",
-        &choice);
+    int rc = converse(pamh, PAM_PROMPT_ECHO_ON,
+        "ProxiLens: [D]uo Push (Standard) oder [P] Ubuntu-Passwort (manuell waehlen)? ", &choice);
     if (rc != PAM_SUCCESS || !choice) {
-        pl_log("Polkit: password-style PAM prompt failed");
-        close(fd);
+        pl_log("Polkit: initial choice prompt failed");
         return PAM_AUTH_ERR;
     }
-    int manual = (choice[0] == 'p' || choice[0] == 'P') && choice[1] == '\0';
-    int duo = choice[0] == '\0';
+    int manual = (choice[0] == 'p' || choice[0] == 'P') && choice[1] == '\\0';
+    int duo = (choice[0] == '\\0' || choice[0] == 'd' || choice[0] == 'D') &&
+              choice[1] == '\\0';
     size_t choice_len = strlen(choice);
     memset(choice, 0, choice_len);
     free(choice);
 
     if (manual) {
-        pl_log("Polkit: user selected Ubuntu password fallback");
-        close(fd);
-        return PAM_IGNORE; /* continue into the following Ubuntu common-auth */
+        pl_log("Polkit: user selected Ubuntu password before Duo");
+        return PAM_IGNORE;
     }
     if (!duo) {
-        pl_log("Polkit: invalid fallback selection");
-        close(fd);
+        pl_log("Polkit: invalid initial choice");
         return PAM_AUTH_ERR;
     }
 
+    (void)converse(pamh, PAM_TEXT_INFO,
+        "ProxiLens: Duo Push wird angefordert. Bitte am Smartphone bestaetigen.", NULL);
+    int fd = connect_policy(service, user);
+    if (fd < 0) {
+        pl_log("Polkit: policy connection failed");
+        return PAM_AUTH_ERR;
+    }
+    pl_log("Polkit: Duo request started after explicit D selection");
     int result = wait_for_duo_or_password(pamh, fd, -1, NULL, 0);
     close(fd);
-    if (result == PAM_SUCCESS) pl_log("Polkit: returning PAM_SUCCESS after Duo approval");
+    if (result == PAM_SUCCESS) pl_log("Polkit: Duo approved; returning PAM_SUCCESS");
     else pl_log("Polkit: Duo did not approve; returning PAM_AUTH_ERR");
     return result;
 }
