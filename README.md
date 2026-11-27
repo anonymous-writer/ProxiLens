@@ -150,3 +150,7 @@ Do not activate this integration until the Go tests, PAM module build, live
 Duo allow/deny tests, explicit local-password path, GNOME Polkit prompt
 behavior, and rollback have been verified on the target Ubuntu installation.
 See `BETA2.1-POLKIT-PAM-INTEGRATION.md` for the staged procedure and limits.
+
+## Deinstallation
+
+Siehe [`docs/UNINSTALL.md`](docs/UNINSTALL.md). Für die manuelle Desktop-Installation gibt es `scripts/uninstall-desktop-app.sh`; Debian-/Ubuntu-Pakete werden über `apt remove` bzw. `apt purge` entfernt. Systemweite experimentelle PAM-/sudoers-/Polkit-Integrationen werden bewusst nicht pauschal entfernt.
