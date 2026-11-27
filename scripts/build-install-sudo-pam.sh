@@ -9,11 +9,25 @@ if [[ $EUID -eq 0 ]]; then
   for artifact in build/proxilens-policy build/proxilens-duo-sync pam/pam_proxilens.so packaging/systemd/system/proxilens-policy.service packaging/helpers/proxilens-duo-import; do
     [[ -f "$ROOT/$artifact" && ! -L "$ROOT/$artifact" ]] || { echo "Build-Artefakt fehlt oder ist kein reguläres File: $artifact" >&2; exit 2; }
   done
-  install -d -o root -g root -m 0755 /usr/libexec/proxilens /usr/lib/x86_64-linux-gnu/security /usr/lib/systemd/system
+  multiarch=""
+  if command -v dpkg-architecture >/dev/null 2>&1; then
+    multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || true)"
+  fi
+  if [[ -z "$multiarch" ]]; then
+    case "$(dpkg --print-architecture 2>/dev/null || true)" in
+      amd64) multiarch="x86_64-linux-gnu" ;;
+      arm64) multiarch="aarch64-linux-gnu" ;;
+      armhf) multiarch="arm-linux-gnueabihf" ;;
+      i386) multiarch="i386-linux-gnu" ;;
+      riscv64) multiarch="riscv64-linux-gnu" ;;
+      *) echo "Nicht unterstützte Debian-Architektur für PAM." >&2; exit 2 ;;
+    esac
+  fi
+  install -d -o root -g root -m 0755 /usr/libexec/proxilens "/usr/lib/$multiarch/security" /usr/lib/systemd/system
   install -o root -g root -m 0755 "$ROOT/build/proxilens-policy" /usr/libexec/proxilens/proxilens-policy
   install -o root -g root -m 0755 "$ROOT/build/proxilens-duo-sync" /usr/libexec/proxilens/proxilens-duo-sync
   install -o root -g root -m 0755 "$ROOT/packaging/helpers/proxilens-duo-import" /usr/libexec/proxilens/proxilens-duo-import
-  install -o root -g root -m 0644 "$ROOT/pam/pam_proxilens.so" /usr/lib/x86_64-linux-gnu/security/pam_proxilens.so
+  install -o root -g root -m 0644 "$ROOT/pam/pam_proxilens.so" "/usr/lib/$multiarch/security/pam_proxilens.so"
   install -o root -g root -m 0644 "$ROOT/packaging/systemd/system/proxilens-policy.service" /usr/lib/systemd/system/proxilens-policy.service
   systemctl daemon-reload
   echo 'PAM-Modul, Policy-Dienst und systemd-Unit installiert. PAM/sudoers sind noch NICHT verändert.'

@@ -89,7 +89,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y debhelper dpkg-dev libpam0g-dev
           dpkg-buildpackage -us -uc -b -d
-          cp "../proxilens_${DEB_VERSION}-1_$(dpkg --print-architecture).deb" "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.deb"
+          PACKAGE_PATH="../proxilens_${DEB_VERSION}-1_$(dpkg --print-architecture).deb"
+          test -f "$PACKAGE_PATH"
+          DEPENDS="$(dpkg-deb -f "$PACKAGE_PATH" Depends)"
+          echo "$DEPENDS" | grep -q 'polkitd'
+          echo "$DEPENDS" | grep -q 'pkexec'
+          ! echo "$DEPENDS" | grep -q 'policykit-1'
+          CONTENTS="$(dpkg-deb --contents "$PACKAGE_PATH")"
+          for required in \
+            "/usr/bin/proxilens-ui" \
+            "/usr/libexec/proxilens/proxilens-policy" \
+            "/usr/libexec/proxilens/proxilens-wake-agent" \
+            "/usr/libexec/proxilens/scripts/install-sudo-pam-proxilens.sh" \
+            "/usr/libexec/proxilens/scripts/install-polkit-pam-proxilens.sh" \
+            "/usr/libexec/proxilens/scripts/install-gnome-extension.sh" \
+            "/usr/libexec/proxilens/scripts/install-wake-agent.sh"; do
+            echo "$CONTENTS" | grep -Fq "$required" || {
+              echo "DEB payload is missing: $required" >&2
+              exit 1
+            }
+          done
+          echo "$CONTENTS" | grep -Fq "/security/pam_proxilens.so"
+          cp "$PACKAGE_PATH" "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.deb"
           sha256sum "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.deb" > "dist/ProxiLens-${VERSION}-linux-${{ matrix.arch }}.deb.sha256"
 
       - name: Upload release assets

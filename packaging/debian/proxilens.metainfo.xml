@@ -10,9 +10,10 @@
 
   <description>
     <p>
-      ProxiLens provides a non-privileged desktop application for direct Duo
-      API diagnostics and an in-memory grant-state simulation. It does not
-      integrate with PAM, Polkit, sudo or system authentication.
+      ProxiLens provides a desktop application and optional, separately
+      activated Duo-protected system integrations for sudo and Polkit PAM.
+      The package also supplies a GNOME extension and a user-session wake
+      agent. Privileged integrations are not enabled automatically.
     </p>
   </description>
 

@@ -66,6 +66,30 @@ jobs:
 
           test "$ARCH" = "amd64"
           test -f "$PACKAGE"
+
+          # Fail the CI job if this accidentally regresses to the old
+          # diagnostic-only package or omits any optional integration payload.
+          DEPENDS="$(dpkg-deb -f "$PACKAGE" Depends)"
+          echo "$DEPENDS" | grep -q 'polkitd'
+          echo "$DEPENDS" | grep -q 'pkexec'
+          ! echo "$DEPENDS" | grep -q 'policykit-1'
+          CONTENTS="$(dpkg-deb --contents "$PACKAGE")"
+          for required in \
+            "/usr/bin/proxilens-ui" \
+            "/usr/libexec/proxilens/proxilens-policy" \
+            "/usr/libexec/proxilens/proxilens-wake-agent" \
+            "/usr/libexec/proxilens/proxilens-duo-import" \
+            "/usr/libexec/proxilens/scripts/install-sudo-pam-proxilens.sh" \
+            "/usr/libexec/proxilens/scripts/install-polkit-pam-proxilens.sh" \
+            "/usr/libexec/proxilens/scripts/install-gnome-extension.sh" \
+            "/usr/libexec/proxilens/scripts/install-wake-agent.sh" \
+            "/usr/libexec/proxilens/gnome-extension/proxilens-input@local/metadata.json"; do
+            echo "$CONTENTS" | grep -Fq "$required" || {
+              echo "DEB payload is missing: $required" >&2
+              exit 1
+            }
+          done
+          echo "$CONTENTS" | grep -Fq "/usr/lib/x86_64-linux-gnu/security/pam_proxilens.so"
           mkdir -p dist
           cp "$PACKAGE" "dist/ProxiLens-test-${VERSION}-amd64.deb"
           sha256sum "dist/ProxiLens-test-${VERSION}-amd64.deb" \

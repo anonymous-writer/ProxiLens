@@ -1,4 +1,4 @@
-proxilens (2.1.0~beta10.12) unstable; urgency=medium
+proxilens (2.1.0~beta10.13) unstable; urgency=medium
 
   * Package the Duo PAM module, sudo/Polkit policy broker, Duo credential
     synchronizer/import helper, integration scripts, GNOME extension payload,
@@ -6,6 +6,12 @@ proxilens (2.1.0~beta10.12) unstable; urgency=medium
   * Keep privileged integrations opt-in and prevent package removal while PAM
     still references the ProxiLens module.
   * Resolve integration scripts from /usr/libexec/proxilens/scripts.
+  * Depend on Ubuntu's split polkitd and pkexec binary packages instead of
+    the unavailable policykit-1 package name.
+  * Install the PAM module under the architecture-specific multiarch library
+    directory on amd64 and arm64.
+  * Update README and AppStream metadata to describe the actual packaged
+    integration features rather than the historical diagnostic-only build.
 
  -- ProxiLens Maintainers <maintainers@example.invalid>  Fri, 27 Nov 2026 20:00:00 +0100
 

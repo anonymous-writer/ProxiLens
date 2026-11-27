@@ -22,7 +22,7 @@ override_dh_auto_install:
 	install -D -m 0755 build/proxilens-wake-agent debian/tmp/usr/libexec/proxilens/proxilens-wake-agent
 	install -D -m 0755 build/proxilens-duo-sync debian/tmp/usr/bin/proxilens-duo-sync
 	install -D -m 0755 packaging/helpers/proxilens-duo-import debian/tmp/usr/libexec/proxilens/proxilens-duo-import
-	install -D -m 0644 pam/pam_proxilens.so debian/tmp/usr/lib/x86_64-linux-gnu/security/pam_proxilens.so
+	install -D -m 0644 pam/pam_proxilens.so debian/tmp/usr/lib/$(shell dpkg-architecture -qDEB_HOST_MULTIARCH)/security/pam_proxilens.so
 	install -D -m 0644 packaging/systemd/system/proxilens-policy.service debian/tmp/usr/lib/systemd/system/proxilens-policy.service
 	install -D -m 0644 scripts/systemd/proxilens-wake-agent.service debian/tmp/usr/libexec/proxilens/scripts/systemd/proxilens-wake-agent.service
 	install -D -m 0644 static/icons/proxilens-512px.png debian/tmp/usr/share/icons/hicolor/512x512/apps/proxilens.png
@@ -35,4 +35,3 @@ override_dh_auto_install:
 	cp -a gnome-extension debian/tmp/usr/libexec/proxilens/
 	chmod -R a+rX,go-w debian/tmp/usr/libexec/proxilens/gnome-extension
 	install -D -m 0644 packaging/sudoers/proxilens debian/tmp/usr/libexec/proxilens/packaging/sudoers/proxilens
-	install -m 0644 scripts/systemd/proxilens-wake-agent.service debian/tmp/usr/libexec/proxilens/scripts/systemd/proxilens-wake-agent.service

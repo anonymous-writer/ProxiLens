@@ -7,7 +7,21 @@ if [[ ! -f "${ROOT}/go.mod" && -f "${ROOT}/source/go.mod" ]]; then ROOT="${ROOT}
 
 SOURCE=/usr/lib/pam.d/polkit-1
 TARGET=/etc/pam.d/polkit-1
-MODULE=/usr/lib/x86_64-linux-gnu/security/pam_proxilens.so
+multiarch=""
+if command -v dpkg-architecture >/dev/null 2>&1; then
+  multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || true)"
+fi
+if [[ -z "$multiarch" ]]; then
+  case "$(dpkg --print-architecture 2>/dev/null || true)" in
+    amd64) multiarch="x86_64-linux-gnu" ;;
+    arm64) multiarch="aarch64-linux-gnu" ;;
+    armhf) multiarch="arm-linux-gnueabihf" ;;
+    i386) multiarch="i386-linux-gnu" ;;
+    riscv64) multiarch="riscv64-linux-gnu" ;;
+    *) echo "Nicht unterstützte Debian-Architektur für PAM: $(dpkg --print-architecture 2>/dev/null || echo unbekannt)" >&2; exit 2 ;;
+  esac
+fi
+MODULE="/usr/lib/${multiarch}/security/pam_proxilens.so"
 DAEMON=/usr/libexec/proxilens/proxilens-policy
 CONFIG=/etc/proxilens/duo.conf
 
