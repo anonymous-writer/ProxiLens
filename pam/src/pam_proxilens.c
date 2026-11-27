@@ -13,19 +13,27 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <syslog.h>
 
 #define SOCKET_PATH "/run/proxilens-policy/auth.sock"
 #define MAX_USER 128
+
+static void pl_log(const char *message) {
+    openlog("pam_proxilens", LOG_PID, LOG_AUTHPRIV);
+    syslog(LOG_NOTICE, "%s", message);
+    closelog();
+}
 
 static int converse(pam_handle_t *pamh, int style, const char *msg, char **reply) {
     const struct pam_conv *conv = NULL;
     struct pam_message m, *mp = &m;
     struct pam_response *resp = NULL;
     int rc = pam_get_item(pamh, PAM_CONV, (const void **)&conv);
-    if (rc != PAM_SUCCESS || !conv || !conv->conv) return PAM_CONV_ERR;
+    if (rc != PAM_SUCCESS || !conv || !conv->conv) { pl_log("PAM conversation handler unavailable"); return PAM_CONV_ERR; }
     m.msg_style = style; m.msg = msg;
     rc = conv->conv(1, (const struct pam_message **)&mp, &resp, conv->appdata_ptr);
     if (rc != PAM_SUCCESS || !resp) {
+        pl_log("PAM conversation callback failed");
         if (resp) {
             if (resp[0].resp) { memset(resp[0].resp, 0, strlen(resp[0].resp)); free(resp[0].resp); }
             free(resp);
@@ -45,7 +53,7 @@ static int converse(pam_handle_t *pamh, int style, const char *msg, char **reply
 
 static int connect_policy(const char *service, const char *user) {
     int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
-    if (fd < 0) return -1;
+    if (fd < 0) { pl_log("cannot create policy socket"); return -1; }
 
     struct timeval tv = {.tv_sec = 100, .tv_usec = 0};
     (void)setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
@@ -56,6 +64,7 @@ static int connect_policy(const char *service, const char *user) {
     addr.sun_family = AF_UNIX;
     strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        pl_log("cannot connect to policy socket");
         close(fd);
         return -1;
     }
@@ -98,10 +107,8 @@ static int wait_for_duo_or_password(pam_handle_t *pamh, int fd, int ttyfd,
         count = 2;
         (void)converse(pamh, PAM_TEXT_INFO,
             "Duo Push gestartet. Mit P kannst du sofort zum Ubuntu-Passwort wechseln.", NULL);
-    } else {
-        (void)converse(pamh, PAM_TEXT_INFO,
-            "Duo Push wird angefordert. Bitte am Smartphone bestaetigen.", NULL);
-    }
+    } /* Polkit's PAM helper owns the GUI conversation; do not send an
+         informational conversation while it is waiting for authentication. */
 
     char answer[16] = {0};
     size_t received = 0;
@@ -139,6 +146,9 @@ static int wait_for_duo_or_password(pam_handle_t *pamh, int fd, int ttyfd,
     }
     if (raw_active && saved && ttyfd >= 0)
         (void)tcsetattr(ttyfd, TCSAFLUSH, saved);
+    if (result == PAM_SUCCESS) pl_log("Duo authorization returned ALLOW");
+    else if (result == PAM_IGNORE) pl_log("user selected Ubuntu password fallback");
+    else pl_log("Duo authorization did not return ALLOW (timeout, denial, or IPC error)");
     memset(answer, 0, sizeof(answer));
     return result;
 }
@@ -194,13 +204,17 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
        Unlike a TTY, a GUI agent cannot deliver a raw single key without its
        normal prompt/submit interaction. */
     int fd = connect_policy(service, user);
-    if (fd < 0) return PAM_AUTH_ERR;
+    if (fd < 0) { pl_log("Polkit: policy connection failed"); return PAM_AUTH_ERR; }
+    pl_log("Polkit: Duo request started; awaiting agent response");
 
     char *choice = NULL;
-    int rc = converse(pamh, PAM_PROMPT_ECHO_ON,
-        "ProxiLens: Duo Push wurde gestartet. Ubuntu-Passwort statt Duo? P eingeben und bestaetigen; sonst Enter.",
+    /* polkit-agent-helper's PAM conversation is password-oriented. Use the
+       supported hidden-input prompt instead of PAM_PROMPT_ECHO_ON. */
+    int rc = converse(pamh, PAM_PROMPT_ECHO_OFF,
+        "Duo Push laeuft. Ubuntu-Passwort statt Duo? P eingeben; fuer Duo leer bestaetigen.",
         &choice);
     if (rc != PAM_SUCCESS || !choice) {
+        pl_log("Polkit: password-style PAM prompt failed");
         close(fd);
         return PAM_AUTH_ERR;
     }
@@ -211,16 +225,20 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
     free(choice);
 
     if (manual) {
+        pl_log("Polkit: user selected Ubuntu password fallback");
         close(fd);
         return PAM_IGNORE; /* continue into the following Ubuntu common-auth */
     }
     if (!duo) {
+        pl_log("Polkit: invalid fallback selection");
         close(fd);
         return PAM_AUTH_ERR;
     }
 
     int result = wait_for_duo_or_password(pamh, fd, -1, NULL, 0);
     close(fd);
+    if (result == PAM_SUCCESS) pl_log("Polkit: returning PAM_SUCCESS after Duo approval");
+    else pl_log("Polkit: Duo did not approve; returning PAM_AUTH_ERR");
     return result;
 }
 
