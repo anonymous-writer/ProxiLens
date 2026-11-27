@@ -1,3 +1,12 @@
+proxilens (2.1.0~beta10.13) unstable; urgency=medium
+
+  * Detect Polkit integration by its pam_proxilens.so rule, not by the
+    standard Ubuntu /etc/pam.d/polkit-1 file existing.
+  * Preserve and restore the pre-existing local Polkit PAM file when toggling
+    the optional integration from the GUI.
+
+ -- ProxiLens Maintainers <maintainers@example.invalid>  Fri, 27 Nov 2026 22:15:00 +0100
+
 proxilens (2.1.0~beta10.12) unstable; urgency=medium
 
   * Package the Duo PAM module, sudo/Polkit policy broker, Duo credential

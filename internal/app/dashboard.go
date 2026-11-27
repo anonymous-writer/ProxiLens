@@ -326,6 +326,8 @@ func Run() error {
 		serviceOut, serviceErr := exec.Command("systemctl", "is-active", "proxilens-policy.service").CombinedOutput()
 		serviceActive := serviceErr == nil && strings.TrimSpace(string(serviceOut)) == "active"
 		sudoInstalled := readable("/etc/pam.d/sudo")
+		// /etc/pam.d/polkit-1 normally exists on Ubuntu even when the optional
+		// ProxiLens integration is disabled. Detect the actual PAM module entry.
 		polkitInstalled := readable("/etc/pam.d/polkit-1")
 		if sudoInstalled {
 			sudoIntegrationValue.SetText(i18n.Translations(lang)["integrationEnabled"])
@@ -760,14 +762,18 @@ func findIntegrationScript(name string) (string, error) {
 	if dataHome == "" && home != "" {
 		dataHome = filepath.Join(home, ".local", "share")
 	}
+	// Prefer the script shipped by the installed DEB. A stale copy under the
+	// user's data directory must never shadow the current system integration
+	// scripts (this previously caused the old "file already exists" Polkit
+	// installer to run even when the package contained the fixed script).
 	candidates := []string{
+		filepath.Join("/usr", "libexec", "proxilens", "scripts", name),
+		filepath.Join("/usr", "local", "share", "proxilens", "scripts", name),
+		filepath.Join("/usr", "share", "proxilens", "scripts", name),
 		filepath.Join(dataHome, "proxilens", "source", "scripts", name),
 		filepath.Join(dataHome, "proxilens", "scripts", name),
 		filepath.Join(home, ".local", "share", "proxilens", "scripts", name),
 		filepath.Join(home, ".local", "share", "proxilens", "source", "scripts", name),
-		filepath.Join("/usr", "libexec", "proxilens", "scripts", name),
-		filepath.Join("/usr", "local", "share", "proxilens", "scripts", name),
-		filepath.Join("/usr", "share", "proxilens", "scripts", name),
 	}
 	if wd, err := os.Getwd(); err == nil {
 		candidates = append(candidates, filepath.Join(wd, "scripts", name))
