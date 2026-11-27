@@ -156,30 +156,55 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
         !user || !*user || strlen(user) >= MAX_USER)
         return PAM_AUTH_ERR;
 
-    /* Keep the previously working Polkit conversation exactly unchanged. */
+    /* sudo: Duo starts immediately; P is read directly from the controlling TTY. */
     if (strcmp(service, "sudo") == 0) {
         int immediate = sudo_immediate_tty(pamh, user);
         if (immediate != PAM_IGNORE) return immediate;
     }
 
+    /*
+     * Polkit: connect to the broker before opening the existing D/P prompt.
+     * The broker starts Duo immediately, while Polkit still receives the same
+     * PAM_PROMPT_ECHO_ON conversation that is known to work with D.  We avoid
+     * a second PAM_TEXT_INFO round-trip, which some Polkit agents reject.
+     */
+    int polkit_fd = -1;
+    if (strcmp(service, "polkit-1") == 0) {
+        polkit_fd = connect_policy("polkit-1", user);
+        if (polkit_fd < 0) return PAM_AUTH_ERR;
+    }
+
     char *choice = NULL;
-    int rc = converse(pamh, PAM_PROMPT_ECHO_ON,
-        "ProxiLens: [D]uo Push (Standard) oder [P] Ubuntu-Passwort (manuell waehlen)? ", &choice);
-    if (rc != PAM_SUCCESS || !choice) return PAM_AUTH_ERR;
+    const char *prompt = polkit_fd >= 0
+        ? "ProxiLens: Duo Push wird gestartet. [D] bestaetigen / [P] Ubuntu-Passwort: "
+        : "ProxiLens: [D]uo Push (Standard) oder [P] Ubuntu-Passwort (manuell waehlen)? ";
+    int rc = converse(pamh, PAM_PROMPT_ECHO_ON, prompt, &choice);
+    if (rc != PAM_SUCCESS || !choice) {
+        if (polkit_fd >= 0) close(polkit_fd);
+        return PAM_AUTH_ERR;
+    }
     int manual = (choice[0] == 'p' || choice[0] == 'P') && choice[1] == '\0';
     int duo = (choice[0] == '\0' || choice[0] == 'd' || choice[0] == 'D') &&
               choice[1] == '\0';
     size_t choice_len = strlen(choice);
     memset(choice, 0, choice_len);
     free(choice);
-    if (manual) return PAM_IGNORE;
-    if (!duo) return PAM_AUTH_ERR;
+    if (manual) {
+        if (polkit_fd >= 0) close(polkit_fd);
+        return PAM_IGNORE;
+    }
+    if (!duo) {
+        if (polkit_fd >= 0) close(polkit_fd);
+        return PAM_AUTH_ERR;
+    }
 
-    char note[] = "ProxiLens: Duo Push wird angefordert. Bitte am Smartphone bestaetigen.";
-    (void)converse(pamh, PAM_TEXT_INFO, note, NULL);
-
-    int fd = connect_policy(service, user);
-    if (fd < 0) return PAM_AUTH_ERR;
+    int fd = polkit_fd;
+    if (fd < 0) {
+        char note[] = "ProxiLens: Duo Push wird angefordert. Bitte am Smartphone bestaetigen.";
+        (void)converse(pamh, PAM_TEXT_INFO, note, NULL);
+        fd = connect_policy(service, user);
+        if (fd < 0) return PAM_AUTH_ERR;
+    }
     char answer[16] = {0};
     size_t received = 0;
     while (received < sizeof(answer) - 1) {

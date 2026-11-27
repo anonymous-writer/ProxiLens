@@ -1,3 +1,11 @@
+proxilens (2.1.0~beta1-2) unstable; urgency=medium
+
+  * Start the Polkit Duo broker request before the existing D/P PAM prompt,
+    preserving the known-working PAM_PROMPT_ECHO_ON conversation and avoiding
+    a second PAM_TEXT_INFO conversation round-trip.
+
+ -- ProxiLens Maintainers <maintainers@proxilens.local>  Sat, 28 Nov 2026 00:20:00 +0100
+
 proxilens (2.1.0~beta10.13) unstable; urgency=medium
 
   * Detect Polkit integration by its pam_proxilens.so rule, not by the
