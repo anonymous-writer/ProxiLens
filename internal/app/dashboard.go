@@ -708,9 +708,21 @@ func findIntegrationScript(name string) (string, error) {
 	if filepath.Base(name) != name || !strings.HasSuffix(name, ".sh") {
 		return "", errors.New("Ungültiger Integrationsskriptname")
 	}
+	home, _ := os.UserHomeDir()
+	if home == "" {
+		home = os.Getenv("HOME")
+	}
+	dataHome := os.Getenv("XDG_DATA_HOME")
+	if dataHome == "" && home != "" {
+		dataHome = filepath.Join(home, ".local", "share")
+	}
 	candidates := []string{
-		filepath.Join(os.Getenv("HOME"), ".local", "share", "proxilens", "source", "scripts", name),
-		filepath.Join(os.Getenv("HOME"), ".local", "share", "proxilens", "scripts", name),
+		filepath.Join(dataHome, "proxilens", "scripts", name),
+		filepath.Join(dataHome, "proxilens", "source", "scripts", name),
+		filepath.Join(home, ".local", "share", "proxilens", "scripts", name),
+		filepath.Join(home, ".local", "share", "proxilens", "source", "scripts", name),
+		filepath.Join("/usr", "local", "share", "proxilens", "scripts", name),
+		filepath.Join("/usr", "share", "proxilens", "scripts", name),
 	}
 	if wd, err := os.Getwd(); err == nil {
 		candidates = append(candidates, filepath.Join(wd, "scripts", name))
@@ -729,5 +741,5 @@ func findIntegrationScript(name string) (string, error) {
 		}
 		return candidate, nil
 	}
-	return "", fmt.Errorf("Integrationsskript %q wurde nicht gefunden. Starte ProxiLens aus dem Projektverzeichnis oder installiere die ProxiLens-Integrationsskripte systemweit.", name)
+	return "", fmt.Errorf("Integrationsskript %q wurde nicht gefunden. Geprüfte Orte: %s. Bitte zuerst die Integrationsskripte bereitstellen.", name, strings.Join(candidates, ", "))
 }

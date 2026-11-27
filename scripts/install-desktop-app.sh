@@ -18,12 +18,22 @@ die() { printf '[%s] FEHLER: %s\n' "$APP_NAME" "$*" >&2; exit 1; }
 
 # Deploy the complete source payload before checking for the UI binary.
 # This lets GUI-managed installers work even when proxilens-ui has not been built yet.
-SOURCE_DIR="${HOME}/.local/share/proxilens/source"
-install -d -m 755 "$SOURCE_DIR"
+DATA_DIR="${XDG_DATA_HOME:-${HOME}/.local/share}/proxilens"
+SOURCE_DIR="${DATA_DIR}/source"
+SCRIPT_DIR_USER="${DATA_DIR}/scripts"
+
+install -d -m 755 "$SOURCE_DIR" "$SCRIPT_DIR_USER"
 cp -a "${PROJECT_ROOT}/." "$SOURCE_DIR/"
 rm -rf "${SOURCE_DIR}/.git" "${SOURCE_DIR}/build" "${SOURCE_DIR}/dist"
+
+# Publish the scripts in BOTH locations used by current and older GUI builds.
+# Keep the source tree as the canonical copy; the flat scripts directory is
+# a compatibility location for already-installed desktop binaries.
+install -d -m 755 "${SOURCE_DIR}/scripts"
 find "${SOURCE_DIR}/scripts" -maxdepth 1 -type f -name '*.sh' -exec chmod 755 {} +
-log "Integrations- und Wake-Agent-Quellen bereitgestellt."
+find "${SOURCE_DIR}/scripts" -maxdepth 1 -type f -name '*.sh' -exec install -m 755 {} "$SCRIPT_DIR_USER" \;
+log "Integrations- und Wake-Agent-Quellen bereitgestellt: ${SOURCE_DIR}/scripts"
+log "Kompatible Skriptablage bereitgestellt: ${SCRIPT_DIR_USER}"
 
 # Locate the UI executable in common project/build/download locations.
 BIN_SOURCE=""
