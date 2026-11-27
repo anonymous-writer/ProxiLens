@@ -2,12 +2,22 @@
 set -Eeuo pipefail
 
 [[ $EUID -eq 0 ]] || { echo "Bitte mit sudo ausführen." >&2; exit 1; }
+ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ ! -f "${ROOT}/go.mod" && -f "${ROOT}/source/go.mod" ]]; then ROOT="${ROOT}/source"; fi
 
 SOURCE=/usr/lib/pam.d/polkit-1
 TARGET=/etc/pam.d/polkit-1
 MODULE=/usr/lib/x86_64-linux-gnu/security/pam_proxilens.so
 DAEMON=/usr/libexec/proxilens/proxilens-policy
 CONFIG=/etc/proxilens/duo.conf
+
+# Ensure the prebuilt PAM module is installed. It is built by
+# install-desktop-app.sh as the desktop user, never compiled as root here.
+MODULE_SOURCE="${ROOT}/pam/pam_proxilens.so"
+if [[ ! -e "$MODULE" && -f "$MODULE_SOURCE" && ! -L "$MODULE_SOURCE" ]]; then
+    install -d -o root -g root -m 0755 "$(dirname "$MODULE")"
+    install -o root -g root -m 0644 "$MODULE_SOURCE" "$MODULE"
+fi
 
 for f in "$SOURCE" "$MODULE" "$DAEMON" "$CONFIG"; do
   [[ -f "$f" && ! -L "$f" ]] || {

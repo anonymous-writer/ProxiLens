@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
+SCRIPT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ ! -f "${SCRIPT_ROOT}/go.mod" && -f "${SCRIPT_ROOT}/source/go.mod" ]]; then SCRIPT_ROOT="${SCRIPT_ROOT}/source"; fi
+ROOT="$SCRIPT_ROOT"
 
 [[ $EUID -eq 0 ]] || { echo 'Bitte mit sudo ausführen.' >&2; exit 1; }
 PAM=/etc/pam.d/sudo
@@ -8,6 +11,14 @@ MODULE=/usr/lib/x86_64-linux-gnu/security/pam_proxilens.so
 DAEMON=/usr/libexec/proxilens/proxilens-policy
 UNIT=/usr/lib/systemd/system/proxilens-policy.service
 CONFIG=/etc/proxilens/duo.conf
+
+# Ensure the prebuilt PAM module is installed. It is built by
+# install-desktop-app.sh as the desktop user, never compiled as root here.
+MODULE_SOURCE="${ROOT}/pam/pam_proxilens.so"
+if [[ ! -e "$MODULE" && -f "$MODULE_SOURCE" && ! -L "$MODULE_SOURCE" ]]; then
+    install -d -o root -g root -m 0755 "$(dirname "$MODULE")"
+    install -o root -g root -m 0644 "$MODULE_SOURCE" "$MODULE"
+fi
 
 for f in "$PAM" "$MODULE" "$DAEMON" "$UNIT" "$CONFIG"; do
   [[ -f "$f" && ! -L "$f" ]] || { echo "Erforderliche reguläre Datei fehlt/ist Symlink: $f" >&2; exit 2; }

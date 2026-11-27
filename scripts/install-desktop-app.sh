@@ -35,6 +35,20 @@ find "${SOURCE_DIR}/scripts" -maxdepth 1 -type f -name '*.sh' -exec install -m 7
 log "Integrations- und Wake-Agent-Quellen bereitgestellt: ${SOURCE_DIR}/scripts"
 log "Kompatible Skriptablage bereitgestellt: ${SCRIPT_DIR_USER}"
 
+# Build PAM module as the logged-in user. The privileged integration scripts
+# only install this prebuilt artifact; they never compile user-owned source as root.
+if command -v make >/dev/null 2>&1 && [[ -r "${PROJECT_ROOT}/pam/src/pam_proxilens.c" ]]; then
+    if make -C "${PROJECT_ROOT}/pam" clean all; then
+        install -d -m 755 "${SOURCE_DIR}/pam"
+        install -m 644 "${PROJECT_ROOT}/pam/pam_proxilens.so" "${SOURCE_DIR}/pam/pam_proxilens.so"
+        log "PAM-Modul als Benutzer gebaut und bereitgestellt."
+    else
+        log "WARNUNG: PAM-Modul konnte nicht gebaut werden. Benötigt werden make, cc und libpam0g-dev."
+    fi
+else
+    log "WARNUNG: make oder PAM-Quellcode fehlt; PAM-Modul wurde nicht gebaut."
+fi
+
 # Locate the UI executable in common project/build/download locations.
 BIN_SOURCE=""
 for candidate in \

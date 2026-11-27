@@ -4,6 +4,7 @@ set -Eeuo pipefail
 
 UUID="proxilens-input@local"
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ ! -f "${ROOT}/go.mod" && -f "${ROOT}/source/go.mod" ]]; then ROOT="${ROOT}/source"; fi
 SOURCE="${ROOT}/gnome-extension/${UUID}"
 WORK="$(mktemp -d)"
 PACKAGE="${WORK}/${UUID}.shell-extension.zip"

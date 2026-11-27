@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ ! -f "${ROOT}/go.mod" && -f "${ROOT}/source/go.mod" ]]; then ROOT="${ROOT}/source"; fi
 AGENT_NAME="proxilens-wake-agent"
 SERVICE_NAME="${AGENT_NAME}.service"
 BIN_DIR="${HOME}/.local/bin"
