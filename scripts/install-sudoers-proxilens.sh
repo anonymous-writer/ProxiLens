@@ -5,21 +5,7 @@ set -euo pipefail
 # privileged authorizer are installed. It never edits /etc/sudoers directly.
 TARGET=/etc/sudoers.d/90-proxilens
 SOURCE="$(cd "$(dirname "$0")/.." && pwd)/packaging/sudoers/proxilens"
-multiarch=""
-if command -v dpkg-architecture >/dev/null 2>&1; then
-  multiarch="$(dpkg-architecture -qDEB_HOST_MULTIARCH 2>/dev/null || true)"
-fi
-if [[ -z "$multiarch" ]]; then
-  case "$(dpkg --print-architecture 2>/dev/null || true)" in
-    amd64) multiarch="x86_64-linux-gnu" ;;
-    arm64) multiarch="aarch64-linux-gnu" ;;
-    armhf) multiarch="arm-linux-gnueabihf" ;;
-    i386) multiarch="i386-linux-gnu" ;;
-    riscv64) multiarch="riscv64-linux-gnu" ;;
-    *) echo "Nicht unterstützte Debian-Architektur für PAM: $(dpkg --print-architecture 2>/dev/null || echo unbekannt)" >&2; exit 2 ;;
-  esac
-fi
-PAM_MODULE="/usr/lib/${multiarch}/security/pam_proxilens.so"
+PAM_MODULE=/usr/lib/x86_64-linux-gnu/security/pam_proxilens.so
 SERVICE=/usr/lib/systemd/system/proxilens-policy.service
 
 if [[ ${EUID} -ne 0 ]]; then echo "Bitte mit sudo ausführen." >&2; exit 1; fi

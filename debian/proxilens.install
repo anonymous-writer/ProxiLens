@@ -4,20 +4,12 @@ usr/libexec/proxilens/proxilens-policy
 usr/libexec/proxilens/proxilens-wake-agent
 usr/libexec/proxilens/proxilens-duo-import
 usr/libexec/proxilens/packaging/sudoers/proxilens usr/libexec/proxilens/packaging/sudoers
-usr/libexec/proxilens/scripts/install-sudo-pam-proxilens.sh usr/libexec/proxilens/scripts
-usr/libexec/proxilens/scripts/remove-sudo-pam-proxilens.sh usr/libexec/proxilens/scripts
-usr/libexec/proxilens/scripts/install-polkit-pam-proxilens.sh usr/libexec/proxilens/scripts
-usr/libexec/proxilens/scripts/remove-polkit-pam-proxilens.sh usr/libexec/proxilens/scripts
-usr/libexec/proxilens/scripts/install-gnome-extension.sh usr/libexec/proxilens/scripts
-usr/libexec/proxilens/scripts/uninstall-gnome-extension.sh usr/libexec/proxilens/scripts
-usr/libexec/proxilens/scripts/install-wake-agent.sh usr/libexec/proxilens/scripts
-usr/libexec/proxilens/scripts/uninstall-wake-agent.sh usr/libexec/proxilens/scripts
-usr/libexec/proxilens/scripts/sync-duo-root.sh usr/libexec/proxilens/scripts
+usr/libexec/proxilens/scripts/* usr/libexec/proxilens/scripts
+usr/libexec/proxilens/scripts/systemd/proxilens-wake-agent.service usr/libexec/proxilens/scripts/systemd
 usr/libexec/proxilens/pam/pam_proxilens.so usr/libexec/proxilens/pam
 usr/libexec/proxilens/gnome-extension usr/libexec/proxilens
-usr/lib/*/security/pam_proxilens.so
+usr/lib/x86_64-linux-gnu/security/pam_proxilens.so
 usr/lib/systemd/system/proxilens-policy.service
 usr/share/applications/proxilens.desktop
 usr/share/icons/hicolor/512x512/apps/proxilens.png
 usr/share/metainfo/proxilens.metainfo.xml
-usr/libexec/proxilens/scripts/systemd/proxilens-wake-agent.service usr/libexec/proxilens/scripts/systemd

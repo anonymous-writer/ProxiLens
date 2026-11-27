@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Root-only importer. Receives credential JSON on stdin; never logs secrets."""
-import json, os, re, sys, tempfile, subprocess
+import json, os, pwd, re, sys, tempfile, subprocess
 
 if os.geteuid() != 0:
     print("Dieser Helfer muss über pkexec als root laufen.", file=sys.stderr)
@@ -15,6 +15,17 @@ except Exception:
     print("Ungültige Konfigurationsdaten.", file=sys.stderr)
     sys.exit(2)
 fields = {k: str(d.get(k, "")).strip() for k in ("ikey", "skey", "host", "username", "push_type")}
+try:
+    # pkexec supplies the invoking desktop user's numeric UID. Bind the
+    # broker config to that local account; never trust a username from JSON.
+    invoking_uid = int(os.environ["PKEXEC_UID"])
+    local_username = pwd.getpwuid(invoking_uid).pw_name
+except (KeyError, ValueError):
+    print("Aufrufender lokaler Benutzer konnte nicht ermittelt werden.", file=sys.stderr)
+    sys.exit(2)
+if invoking_uid == 0 or not local_username:
+    print("Ungültiger aufrufender Benutzer.", file=sys.stderr)
+    sys.exit(2)
 if not all(fields[k] for k in ("ikey", "skey", "host", "username")):
     print("Duo-Konfiguration unvollständig.", file=sys.stderr)
     sys.exit(2)
@@ -36,6 +47,7 @@ try:
         f.write("[duo]\n")
         for k in ("ikey", "skey", "host", "username", "push_type"):
             if fields[k]: f.write(f"{k}={fields[k]}\n")
+        f.write(f"local_username={local_username}\n")
         f.flush(); os.fsync(f.fileno())
     os.replace(tmp, "/etc/proxilens/duo.conf")
     os.chown("/etc/proxilens/duo.conf", 0, 0)

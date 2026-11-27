@@ -2,14 +2,14 @@ Source: proxilens
 Section: utils
 Priority: optional
 Maintainer: ProxiLens Maintainers <maintainers@example.invalid>
-Build-Depends: debhelper-compat (= 13), dpkg-dev, golang-any, build-essential, pkg-config, libgl1-mesa-dev, libegl1-mesa-dev, xorg-dev, libwayland-dev, libxkbcommon-dev, wayland-protocols, libpam0g-dev
+Build-Depends: debhelper-compat (= 13), golang-any, build-essential, pkg-config, libgl1-mesa-dev, libegl1-mesa-dev, xorg-dev, libwayland-dev, libxkbcommon-dev, wayland-protocols, libpam0g-dev
 Standards-Version: 4.7.0
 Rules-Requires-Root: no
 Homepage: https://github.com/anonymous-writer/ProxiLens
 
 Package: proxilens
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, libgl1, libegl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libwayland-client0, libxkbcommon0, libsecret-1-0, libpam0g, dbus-bin, polkitd, pkexec
+Depends: ${shlibs:Depends}, ${misc:Depends}, libgl1, libegl1, libx11-6, libxcursor1, libxrandr2, libxinerama1, libxi6, libwayland-client0, libxkbcommon0, libsecret-1-0, libpam0g, dbus-bin, policykit-1
 Description: ProxiLens Duo desktop application and optional system integrations
  ProxiLens provides a desktop application with packaged PAM, PolicyKit, GNOME
  extension and wake-agent components. Privileged authentication integrations
