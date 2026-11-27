@@ -2,11 +2,18 @@
 set -e
 case "$1" in
   remove|deconfigure)
-    # Never remove the PAM module/broker while PAM still references it: that
-    # could lock the administrator out. Deactivate each integration in GUI first.
+    # Restore PAM files before the package removes its PAM module and helpers.
+    # Run only the matching remover when its module reference is present.
+    if grep -q 'pam_proxilens\.so' /etc/pam.d/sudo 2>/dev/null; then
+      /usr/libexec/proxilens/scripts/remove-sudo-pam-proxilens.sh
+    fi
+    if grep -q 'pam_proxilens\.so' /etc/pam.d/polkit-1 2>/dev/null; then
+      /usr/libexec/proxilens/scripts/remove-polkit-pam-proxilens.sh
+    fi
+    # Fail closed: never remove the PAM module while a stack still references it.
     if grep -q 'pam_proxilens\.so' /etc/pam.d/sudo 2>/dev/null || \
        grep -q 'pam_proxilens\.so' /etc/pam.d/polkit-1 2>/dev/null; then
-      echo "ProxiLens PAM is still enabled. Remove sudo and Polkit integrations from the GUI before removing the package." >&2
+      echo "ProxiLens-PAM ist weiterhin eingebunden; Paket wird aus Sicherheitsgründen nicht entfernt." >&2
       exit 1
     fi
     systemctl disable --now proxilens-policy.service >/dev/null 2>&1 || true

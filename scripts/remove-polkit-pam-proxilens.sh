@@ -44,5 +44,9 @@ else
 fi
 
 rm -rf -- "$STATE_DIR"
+# Stop the broker only when neither PAM stack still uses it.
+if ! grep -q 'pam_proxilens\.so' /etc/pam.d/sudo 2>/dev/null; then
+  systemctl disable --now proxilens-policy.service >/dev/null 2>&1 || true
+fi
 echo "Sicherung der installierten und ursprünglichen Dateien: $backup"
 echo "Der sudo-PAM-Stack und sudoers wurden nicht verändert."
