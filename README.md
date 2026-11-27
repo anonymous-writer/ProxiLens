@@ -150,3 +150,17 @@ Do not activate this integration until the Go tests, PAM module build, live
 Duo allow/deny tests, explicit local-password path, GNOME Polkit prompt
 behavior, and rollback have been verified on the target Ubuntu installation.
 See `BETA2.1-POLKIT-PAM-INTEGRATION.md` for the staged procedure and limits.
+
+
+## PAM-Auswahl (Duo-Standard / Passwort-Fallback)
+
+Bei einer ProxiLens-PAM-Abfrage gilt:
+- **Nur Enter**: Duo Push wird gestartet (Standard).
+- **Beliebige Taste oder Text, danach Enter**: ProxiLens überspringt Duo und
+  überlässt die Authentifizierung dem normalen Ubuntu-PAM-Passwortweg.
+
+Die PAM-Konversation ist zeilenorientiert und kann sowohl von Terminals als
+auch von grafischen Polkit-Agenten bereitgestellt werden. Deshalb ist ein
+zuverlässiger globaler Einzeltasten-Listener während eines bereits laufenden
+Duo-Pushs nicht portabel verfügbar. Die Umschaltung erfolgt vor dem Start des
+Pushs.

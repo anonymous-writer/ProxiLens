@@ -55,18 +55,21 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
 
     char *choice = NULL;
     int rc = converse(pamh, PAM_PROMPT_ECHO_ON,
-        "ProxiLens: [D]uo Push (Standard) oder [P] Ubuntu-Passwort (manuell waehlen)? ", &choice);
+        "ProxiLens: Enter = Duo Push; beliebige Taste + Enter = Ubuntu-Passwort: ", &choice);
     if (rc != PAM_SUCCESS || !choice) return PAM_AUTH_ERR;
 
-    int manual = (choice[0] == 'p' || choice[0] == 'P') && choice[1] == '\0';
-    int duo = (choice[0] == '\0' || choice[0] == 'd' || choice[0] == 'D') &&
-              choice[1] == '\0';
+    /*
+     * Empty input (just Enter) keeps Duo Push as the default.
+     * Any non-empty key/string selects the normal Ubuntu PAM password flow.
+     * PAM conversations are line-oriented in terminals and may be GUI-backed;
+     * a portable single-key/raw-mode listener is not available here.
+     */
+    int manual = choice[0] != '\0';
     size_t choice_len = strlen(choice);
     memset(choice, 0, choice_len);
     free(choice);
 
     if (manual) return PAM_IGNORE;
-    if (!duo) return PAM_AUTH_ERR;
 
     char note[] = "ProxiLens: Duo Push wird angefordert. Bitte am Smartphone bestaetigen.";
     (void)converse(pamh, PAM_TEXT_INFO, note, NULL);
