@@ -156,71 +156,15 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
         !user || !*user || strlen(user) >= MAX_USER)
         return PAM_AUTH_ERR;
 
-    /* sudo: Duo starts immediately; P is read directly from the controlling TTY. */
+    /* Keep the previously working Polkit conversation exactly unchanged. */
     if (strcmp(service, "sudo") == 0) {
         int immediate = sudo_immediate_tty(pamh, user);
         if (immediate != PAM_IGNORE) return immediate;
     }
 
-    /*
-     * Polkit: start Duo Push BEFORE displaying the familiar D/P menu.
-     * Keep the broker connection open while the agent displays the prompt.
-     * D accepts the already-running Push; P closes the request and lets the
-     * following common-auth stack perform the Ubuntu password check.
-     * This preserves the known-working Polkit conversation and removes only
-     * the requirement to press D before the Push starts.
-     */
-    if (strcmp(service, "polkit-1") == 0) {
-        int fd = connect_policy("polkit-1", user);
-        if (fd < 0) return PAM_IGNORE;
-
-        char *choice = NULL;
-        const char *prompt =
-            "ProxiLens: Duo Push laeuft bereits. [D] bestaetigen oder [P] Ubuntu-Passwort: ";
-        int rc = converse(pamh, PAM_PROMPT_ECHO_ON, prompt, &choice);
-        if (rc != PAM_SUCCESS || !choice) {
-            close(fd);
-            return PAM_CONV_ERR;
-        }
-
-        int manual = (choice[0] == 'p' || choice[0] == 'P') && choice[1] == '\0';
-        int duo = (choice[0] == '\0' || choice[0] == 'd' || choice[0] == 'D') &&
-                  choice[1] == '\0';
-        size_t choice_len = strlen(choice);
-        memset(choice, 0, choice_len);
-        free(choice);
-
-        if (manual) {
-            close(fd);
-            return PAM_IGNORE;
-        }
-        if (!duo) {
-            close(fd);
-            return PAM_AUTH_ERR;
-        }
-
-        char answer[16] = {0};
-        size_t received = 0;
-        while (received < sizeof(answer) - 1) {
-            ssize_t r = read(fd, answer + received, sizeof(answer) - 1 - received);
-            if (r < 0 && errno == EINTR) continue;
-            if (r <= 0) break;
-            received += (size_t)r;
-            if (memchr(answer, '\n', received) != NULL) break;
-        }
-        close(fd);
-        if (received == 6 && memcmp(answer, "ALLOW\n", 6) == 0) {
-            memset(answer, 0, sizeof(answer));
-            return PAM_SUCCESS;
-        }
-        memset(answer, 0, sizeof(answer));
-        return PAM_IGNORE;
-    }
-
-    /* Non-Polkit fallback path retains the established D/P conversation. */
     char *choice = NULL;
-    const char *prompt = "ProxiLens: [D]uo Push (Standard) oder [P] Ubuntu-Passwort (manuell waehlen)? ";
-    int rc = converse(pamh, PAM_PROMPT_ECHO_ON, prompt, &choice);
+    int rc = converse(pamh, PAM_PROMPT_ECHO_ON,
+        "ProxiLens: [D]uo Push (Standard) oder [P] Ubuntu-Passwort (manuell waehlen)? ", &choice);
     if (rc != PAM_SUCCESS || !choice) return PAM_AUTH_ERR;
     int manual = (choice[0] == 'p' || choice[0] == 'P') && choice[1] == '\0';
     int duo = (choice[0] == '\0' || choice[0] == 'd' || choice[0] == 'D') &&
@@ -233,6 +177,7 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
 
     char note[] = "ProxiLens: Duo Push wird angefordert. Bitte am Smartphone bestaetigen.";
     (void)converse(pamh, PAM_TEXT_INFO, note, NULL);
+
     int fd = connect_policy(service, user);
     if (fd < 0) return PAM_AUTH_ERR;
     char answer[16] = {0};
